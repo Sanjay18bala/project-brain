@@ -30,3 +30,26 @@ def test_keeps_relationship_between_two_valid_entities():
 def test_malformed_entity_entries_are_ignored():
     raw = {"entities": ["not-a-dict", {"type": "TASK"}], "relationships": []}
     assert _filter_extraction(raw)["entities"] == []
+
+
+def test_non_string_type_does_not_crash_with_unhashable_typeerror():
+    raw = {"entities": [{"type": ["not", "a", "string"], "name": "x"}], "relationships": []}
+    assert _filter_extraction(raw)["entities"] == []
+
+
+def test_non_string_state_change_entity_does_not_crash():
+    raw = {
+        "entities": [{"type": "TASK", "name": "OCR"}],
+        "relationships": [],
+        "state_changes": [{"entity": {"nested": "dict"}, "new_state": "MERGED"}],
+    }
+    assert _filter_extraction(raw)["state_changes"] == []
+
+
+def test_keeps_valid_state_change():
+    raw = {
+        "entities": [{"type": "TASK", "name": "OCR"}],
+        "relationships": [],
+        "state_changes": [{"entity": "OCR", "new_state": "MERGED", "confidence": 0.9}],
+    }
+    assert _filter_extraction(raw)["state_changes"] == [{"entity": "OCR", "new_state": "MERGED", "confidence": 0.9}]

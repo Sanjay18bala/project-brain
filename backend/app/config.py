@@ -9,6 +9,10 @@ GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
 API_KEY = os.getenv("API_KEY", "")
 DEFAULT_PROJECT_ID = os.getenv("DEFAULT_PROJECT_ID", "")
+
+# Recency-decay time constant for conflict scoring (TechStack.md §4a). No "right" default —
+# tune against real usage; a fast-moving team may want minutes, not hours.
+RECENCY_HALF_LIFE_SECONDS = float(os.getenv("RECENCY_HALF_LIFE_SECONDS", str(24 * 60 * 60)))
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/nemotron-3-nano-30b-a3b")

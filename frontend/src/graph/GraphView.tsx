@@ -33,7 +33,7 @@ export function GraphView({ projectId }: { projectId: string }) {
   if (error) return <div className="p-4 text-red-600">{error}</div>;
 
   return (
-    <div className="h-screen w-full">
+    <div className="h-full w-full">
       <ReactFlow nodes={nodes} edges={edges} fitView>
         <Background />
         <Controls />

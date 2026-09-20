@@ -8,9 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from ..agents.extraction import extract
-from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, SLACK_SIGNING_SECRET
+from ..agents.reconciliation import is_conflicted, rank_claims
+from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, RECENCY_HALF_LIFE_SECONDS, SLACK_SIGNING_SECRET
 from ..db import get_conn
-from ..graph.repository import add_evidence, get_graph, project_exists, upsert_edge, upsert_node
+from ..graph.repository import (
+    add_evidence,
+    add_state_change,
+    get_conflicted_nodes,
+    get_graph,
+    get_state_changes_for_node,
+    lock_node,
+    project_exists,
+    set_node_status,
+    upsert_edge,
+    upsert_node,
+)
 from ..ingestion.github import verify_github_signature
 from ..ingestion.slack import verify_slack_signature
 from ..security import require_api_key
@@ -53,8 +65,24 @@ def _write_extraction_to_graph(
     for rel in extraction["relationships"]:
         upsert_edge(conn, project_id, node_ids[rel["source"]], node_ids[rel["target"]], rel["relation"])
 
+    for change in extraction["state_changes"]:
+        node_id = node_ids[change["entity"]]
+        add_state_change(conn, project_id, node_id, source_type, source_ref, change["new_state"], change["confidence"], occurred_at)
+
     for node_id in node_ids.values():
         add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at)
+
+    # Recompute conflict status for every touched node from its full claim history —
+    # never derived from just this event, so a past conflict stays CONFLICTED until
+    # actual agreeing/superseding evidence arrives (PRD.md §7.4: never silently resolved).
+    # lock_node serializes this against a concurrent GitHub+Slack write racing on the same
+    # node — without it, two overlapping transactions can each miss the other's just-
+    # inserted claim and both write KNOWN, silently swallowing the exact conflict this
+    # feature exists to catch.
+    for node_id in set(node_ids.values()):
+        lock_node(conn, node_id)
+        claims = get_state_changes_for_node(conn, node_id)
+        set_node_status(conn, node_id, "CONFLICTED" if is_conflicted(claims) else "KNOWN")
 
     return len(extraction["entities"])
 
@@ -163,3 +191,18 @@ def project_graph(project_id: uuid.UUID):
         if not project_exists(conn, project_id):
             raise HTTPException(status_code=404, detail="unknown project")
         return get_graph(conn, project_id)
+
+
+@router.get("/projects/{project_id}/conflicts", dependencies=[Depends(require_api_key)])
+def project_conflicts(project_id: uuid.UUID):
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+
+        conflicts = []
+        for node in get_conflicted_nodes(conn, project_id):
+            claims = get_state_changes_for_node(conn, node["id"])
+            conflicts.append({"node": node, "claims": rank_claims(claims, now, RECENCY_HALF_LIFE_SECONDS)})
+
+    return {"conflicts": conflicts}

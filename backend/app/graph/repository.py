@@ -48,6 +48,56 @@ def add_evidence(conn, project_id, node_id, source_type, source_ref, content, ur
     )
 
 
+def lock_node(conn, node_id):
+    """Row-locks the node so concurrent writers touching it serialize their conflict recompute.
+
+    # ponytail: per-node FOR UPDATE lock, fine at MVP concurrency; revisit with a queue
+    # if webhook volume ever makes lock contention a real bottleneck.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM nodes WHERE id = %s FOR UPDATE", (node_id,))
+
+
+def add_state_change(conn, project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO state_changes (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at),
+    )
+
+
+def get_state_changes_for_node(conn, node_id):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT source_type, source_ref, claimed_state, confidence, occurred_at
+        FROM state_changes WHERE node_id = %s
+        ORDER BY occurred_at DESC
+        """,
+        (node_id,),
+    )
+    cols = ["source_type", "source_ref", "claimed_state", "confidence", "occurred_at"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def set_node_status(conn, node_id, status):
+    cur = conn.cursor()
+    cur.execute("UPDATE nodes SET status = %s, updated_at = now() WHERE id = %s", (status, node_id))
+
+
+def get_conflicted_nodes(conn, project_id):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, type, name, status FROM nodes WHERE project_id = %s AND status = 'CONFLICTED'",
+        (project_id,),
+    )
+    cols = ["id", "type", "name", "status"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
 def get_graph(conn, project_id):
     cur = conn.cursor()
     cur.execute("SELECT id, type, name, status, metadata FROM nodes WHERE project_id = %s", (project_id,))

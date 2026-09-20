@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 node_modules/
 dist/
+*.tsbuildinfo
 .env
 *.log
 .DS_Store
