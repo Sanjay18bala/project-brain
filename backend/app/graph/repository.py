@@ -8,13 +8,18 @@ def project_exists(conn, project_id) -> bool:
 
 
 def upsert_node(conn, project_id, type_, name, status="KNOWN", metadata=None):
+    """Identity is (project_id, name) — not type — so the same real-world entity typed
+    differently across sources (a GitHub PR vs. a Slack topic) still resolves to one node
+    instead of splitting into ones that can never be compared for conflict. `type` is
+    updated to the latest extraction's value, same as `status`; the append-only
+    evidence/state_changes tables remain the actual history, not this snapshot row."""
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO nodes (project_id, type, name, status, metadata)
         VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (project_id, type, name)
-        DO UPDATE SET status = EXCLUDED.status, updated_at = now()
+        ON CONFLICT (project_id, name)
+        DO UPDATE SET type = EXCLUDED.type, status = EXCLUDED.status, updated_at = now()
         RETURNING id
         """,
         (project_id, type_, name, status, Jsonb(metadata or {})),

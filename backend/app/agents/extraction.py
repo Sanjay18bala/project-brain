@@ -38,10 +38,9 @@ def _filter_extraction(raw: dict) -> dict:
     injected instruction inside a GitHub issue/PR body could still make the model
     emit an arbitrary type/relation/state string. This is the actual enforcement point.
 
-    # ponytail: relationships and state_changes reference entities by name only (the
-    # model's output shape), so two extracted entities sharing a name but different
-    # types collide. Low-likelihood for typical GitHub/Slack content; widen to key by
-    # (type, name) pairs if that starts happening in practice.
+    Entities are identified by name alone within an extraction batch (matching node
+    identity in graph/repository.py — see upsert_node), so relationships/state_changes
+    can reference an entity's name regardless of what type it was extracted as.
     """
     entities = [
         e
