@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..agents.extraction import extract
 from ..agents.reconciliation import is_conflicted, rank_claims
+from ..agents.risk import detect_risks
 from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, RECENCY_HALF_LIFE_SECONDS, SLACK_SIGNING_SECRET
 from ..db import get_conn
 from ..graph.repository import (
@@ -206,3 +207,13 @@ def project_conflicts(project_id: uuid.UUID):
             conflicts.append({"node": node, "claims": rank_claims(claims, now, RECENCY_HALF_LIFE_SECONDS)})
 
     return {"conflicts": conflicts}
+
+
+@router.get("/projects/{project_id}/risks", dependencies=[Depends(require_api_key)])
+def project_risks(project_id: uuid.UUID):
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        graph = get_graph(conn, project_id)
+
+    return {"risks": detect_risks(graph["nodes"], graph["edges"])}

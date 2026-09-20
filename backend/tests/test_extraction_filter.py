@@ -1,4 +1,4 @@
-from app.agents.extraction import _filter_extraction
+from app.agents.extraction import MAX_EXTRACTION_ITEMS, _filter_extraction
 
 
 def test_keeps_entities_with_allowed_type():
@@ -53,3 +53,8 @@ def test_keeps_valid_state_change():
         "state_changes": [{"entity": "OCR", "new_state": "MERGED", "confidence": 0.9}],
     }
     assert _filter_extraction(raw)["state_changes"] == [{"entity": "OCR", "new_state": "MERGED", "confidence": 0.9}]
+
+
+def test_entity_list_is_capped_to_bound_graph_growth():
+    raw = {"entities": [{"type": "TASK", "name": f"task-{i}"} for i in range(MAX_EXTRACTION_ITEMS + 20)]}
+    assert len(_filter_extraction(raw)["entities"]) <= MAX_EXTRACTION_ITEMS

@@ -31,3 +31,13 @@ export async function fetchConflicts(projectId: string): Promise<ConflictsRespon
   if (!res.ok) throw new Error(`Failed to fetch conflicts: ${res.status}`);
   return res.json();
 }
+
+export type RiskChainStep = { edge: GraphEdge; node: GraphNode | null };
+export type Risk = { source_node: GraphNode; chain: RiskChainStep[] };
+export type RisksResponse = { risks: Risk[] };
+
+export async function fetchRisks(projectId: string): Promise<RisksResponse> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/risks`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch risks: ${res.status}`);
+  return res.json();
+}
