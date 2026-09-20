@@ -42,15 +42,31 @@ def upsert_edge(conn, project_id, source_id, target_id, relationship, confidence
     return cur.fetchone()[0]
 
 
-def add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at):
+def add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=None):
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO evidence (project_id, node_id, source_type, source_ref, content, url, occurred_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO evidence (project_id, node_id, source_type, source_ref, content, url, occurred_at, author)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (project_id, node_id, source_type, source_ref, content, url, occurred_at),
+        (project_id, node_id, source_type, source_ref, content, url, occurred_at, author),
     )
+
+
+def log_event(conn, project_id, source, event_type, payload, received_at):
+    """Durable raw-event log, independent of what extraction manages to recognize —
+    written in its own short-lived connection/transaction so a later extraction failure
+    can never roll back the fact that the event was received. See docs/roadmap-v2.md."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO events (project_id, source, event_type, payload, received_at)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (project_id, source, event_type, Jsonb(payload), received_at),
+    )
+    return cur.fetchone()[0]
 
 
 def lock_node(conn, node_id):

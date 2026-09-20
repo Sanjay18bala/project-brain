@@ -23,6 +23,7 @@ from ..graph.repository import (
     get_graph,
     get_state_changes_for_node,
     lock_node,
+    log_event,
     project_exists,
     set_node_status,
     upsert_edge,
@@ -62,6 +63,7 @@ def _write_extraction_to_graph(
     content: str,
     url: str | None,
     occurred_at: datetime,
+    author: str | None = None,
 ) -> int:
     node_ids: dict[str, uuid.UUID] = {}
     for entity in extraction["entities"]:
@@ -75,7 +77,7 @@ def _write_extraction_to_graph(
         add_state_change(conn, project_id, node_id, source_type, source_ref, change["new_state"], change["confidence"], occurred_at)
 
     for node_id in node_ids.values():
-        add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at)
+        add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=author)
 
     # Recompute conflict status for every touched node from its full claim history —
     # never derived from just this event, so a past conflict stays CONFLICTED until
@@ -92,6 +94,21 @@ def _write_extraction_to_graph(
     return len(extraction["entities"])
 
 
+def _classify_github_event_type(payload: dict) -> str:
+    if "pull_request" in payload:
+        return "pull_request"
+    if "issue" in payload:
+        return "issue"
+    if "commits" in payload:
+        return "push"
+    return "unknown"
+
+
+def _log_github_event(project_id: uuid.UUID, payload: dict) -> None:
+    with get_conn() as conn:
+        log_event(conn, project_id, "github", _classify_github_event_type(payload), payload, datetime.now(timezone.utc))
+
+
 def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
     """Runs the extraction + DB writes off the event loop (blocking psycopg/openai calls)."""
     extraction = extract(json.dumps(payload))
@@ -99,6 +116,7 @@ def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
     source_ref = str(subject.get("number", ""))
     content = json.dumps(payload)[:2000]
     url = payload.get("repository", {}).get("html_url")
+    author = subject.get("user", {}).get("login")
 
     with get_conn() as conn:
         if not project_exists(conn, project_id):
@@ -112,6 +130,7 @@ def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
             content=content,
             url=url,
             occurred_at=datetime.now(timezone.utc),
+            author=author[:128] if author else None,
         )
 
 
@@ -124,12 +143,18 @@ def _slack_ts_to_datetime(ts: str | None) -> datetime:
         return datetime.now(timezone.utc)
 
 
+def _log_slack_event(project_id: uuid.UUID, payload: dict) -> None:
+    with get_conn() as conn:
+        log_event(conn, project_id, "slack", payload.get("event", {}).get("type", "unknown"), payload, datetime.now(timezone.utc))
+
+
 def _process_slack_event(project_id: uuid.UUID, event: dict) -> int:
     """Runs the extraction + DB writes off the event loop, same as GitHub events."""
     text = event["text"][:2000]
     extraction = extract(text)
     content = text
     occurred_at = _slack_ts_to_datetime(event.get("ts"))
+    author = event.get("user")
 
     with get_conn() as conn:
         if not project_exists(conn, project_id):
@@ -143,6 +168,7 @@ def _process_slack_event(project_id: uuid.UUID, event: dict) -> int:
             content=content,
             url=None,
             occurred_at=occurred_at,
+            author=author[:128] if author else None,
         )
 
 
@@ -158,6 +184,7 @@ async def receive_github_event(request: Request):
     project_id = _default_project_id()
     payload = json.loads(body)
 
+    await run_in_threadpool(_log_github_event, project_id, payload)
     entity_count = await run_in_threadpool(_process_github_event, project_id, payload)
     return {"status": "processed", "entities": entity_count}
 
@@ -182,10 +209,16 @@ async def receive_slack_event(request: Request):
         return {"challenge": payload.get("challenge")}
 
     event = payload.get("event", {})
+    project_id = _default_project_id()
+
+    if event.get("type") == "message":
+        # Logged before the subtype/bot/text filter below, so the full human-message
+        # history is retained even for messages extraction later decides to ignore.
+        await run_in_threadpool(_log_slack_event, project_id, payload)
+
     if event.get("type") != "message" or event.get("subtype") or event.get("bot_id") or not event.get("text"):
         return {"status": "ignored"}
 
-    project_id = _default_project_id()
     entity_count = await run_in_threadpool(_process_slack_event, project_id, event)
     return {"status": "processed", "entities": entity_count}
 

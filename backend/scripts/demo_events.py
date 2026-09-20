@@ -84,7 +84,12 @@ def main() -> None:
             client,
             {
                 "action": "opened",
-                "issue": {"number": 1, "title": "OCR Pipeline", "body": "Build the OCR output pipeline."},
+                "issue": {
+                    "number": 1,
+                    "title": "OCR Pipeline",
+                    "body": "Build the OCR output pipeline.",
+                    "user": {"login": "priya-dev"},
+                },
                 "repository": repo,
             },
         )
@@ -123,6 +128,7 @@ def main() -> None:
                     "title": "Add OCR output schema",
                     "body": "Finalizes the OCR output format.",
                     "merged": True,
+                    "user": {"login": "priya-dev"},
                 },
                 "repository": repo,
             },
@@ -138,6 +144,7 @@ def main() -> None:
                     "title": "Authentication",
                     "body": "Authentication work merged.",
                     "merged": True,
+                    "user": {"login": "sam-eng"},
                 },
                 "repository": repo,
             },

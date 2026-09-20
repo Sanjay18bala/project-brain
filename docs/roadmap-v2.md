@@ -98,13 +98,14 @@ matters (e.g. "this conflict needs someone's input" rather than "Alex hasn't res
 
 ## Open product questions (before building alerts specifically)
 
-1. For a conflict alert — DM both disagreeing parties, or the PM, or both? Does it depend on severity?
-2. How do we resolve a GitHub login to a Slack user ID for cross-platform alerting? (Manual mapping table
-   for MVP is probably the honest answer — there's no reliable automatic inference.)
+1. **Decided**: conflict alerts DM both disagreeing parties directly, asking them to reconcile; the PM is
+   not routed through by default. (Escalation-to-PM-after-N-days is still open — not yet decided whether
+   that ships in Slice 10 or later.)
+2. **Decided**: GitHub login → Slack user ID mapping is a manual table for MVP — no automatic inference.
 3. What's the re-alert policy so this doesn't become spam? (Once per state change? Daily cap? Escalation
-   ladder?)
+   ladder?) — still open.
 4. Does the demo/hackathon scope want the Slack *app* actually installed with a bot user, or is showing
-   the alert-sending code path (without a live workspace) enough for the submission?
+   the alert-sending code path (without a live workspace) enough for the submission? — still open.
 
 ## Proposed slices (sequenced by what unlocks what)
 
