@@ -36,7 +36,7 @@ The AI layer runs on Nebius Token Factory; the app itself runs on Nebius AI Clou
 
 1. **Token Factory**: get an API key from [Nebius Token Factory](https://tokenfactory.nebius.com/) and set
    `NEBIUS_API_KEY` — no separate provisioning needed, `NEMOTRON_MODEL` already defaults to
-   `nvidia/nemotron-3-nano-30b-a3b` via its OpenAI-compatible endpoint.
+   `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` via its OpenAI-compatible endpoint.
 2. **Database**: provision a managed PostgreSQL instance (with the `vector` extension available) on Nebius
    AI Cloud, or run the `postgres` service from `docker-compose.yml` on a Nebius Compute VM. Point
    `DATABASE_URL` at it and apply `database/migrations/*.sql` in order, then
