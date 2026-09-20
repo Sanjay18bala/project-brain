@@ -1,0 +1,3 @@
+INSERT INTO projects (id, name)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Project Brain Demo')
+ON CONFLICT (id) DO NOTHING;
