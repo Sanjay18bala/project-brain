@@ -5,17 +5,21 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from ..agents.extraction import extract
+from ..agents.investigation import answer_question
 from ..agents.reconciliation import is_conflicted, rank_claims
 from ..agents.risk import detect_risks
 from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, RECENCY_HALF_LIFE_SECONDS, SLACK_SIGNING_SECRET
 from ..db import get_conn
 from ..graph.repository import (
+    DEFAULT_EVIDENCE_LIMIT,
     add_evidence,
     add_state_change,
     get_conflicted_nodes,
+    get_evidence_for_project,
     get_graph,
     get_state_changes_for_node,
     lock_node,
@@ -26,7 +30,7 @@ from ..graph.repository import (
 )
 from ..ingestion.github import verify_github_signature
 from ..ingestion.slack import verify_slack_signature
-from ..security import require_api_key
+from ..security import enforce_llm_rate_limit, require_api_key
 
 router = APIRouter()
 
@@ -194,17 +198,21 @@ def project_graph(project_id: uuid.UUID):
         return get_graph(conn, project_id)
 
 
+def _compute_conflicts(conn, project_id: uuid.UUID) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    conflicts = []
+    for node in get_conflicted_nodes(conn, project_id):
+        claims = get_state_changes_for_node(conn, node["id"])
+        conflicts.append({"node": node, "claims": rank_claims(claims, now, RECENCY_HALF_LIFE_SECONDS)})
+    return conflicts
+
+
 @router.get("/projects/{project_id}/conflicts", dependencies=[Depends(require_api_key)])
 def project_conflicts(project_id: uuid.UUID):
-    now = datetime.now(timezone.utc)
     with get_conn() as conn:
         if not project_exists(conn, project_id):
             raise HTTPException(status_code=404, detail="unknown project")
-
-        conflicts = []
-        for node in get_conflicted_nodes(conn, project_id):
-            claims = get_state_changes_for_node(conn, node["id"])
-            conflicts.append({"node": node, "claims": rank_claims(claims, now, RECENCY_HALF_LIFE_SECONDS)})
+        conflicts = _compute_conflicts(conn, project_id)
 
     return {"conflicts": conflicts}
 
@@ -217,3 +225,31 @@ def project_risks(project_id: uuid.UUID):
         graph = get_graph(conn, project_id)
 
     return {"risks": detect_risks(graph["nodes"], graph["edges"])}
+
+
+class InvestigateRequest(BaseModel):
+    project_id: uuid.UUID
+    question: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/agent/investigate", dependencies=[Depends(require_api_key), Depends(enforce_llm_rate_limit)])
+def agent_investigate(payload: InvestigateRequest):
+    with get_conn() as conn:
+        if not project_exists(conn, payload.project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+
+        graph = get_graph(conn, payload.project_id)
+        evidence = get_evidence_for_project(conn, payload.project_id)
+        context = {
+            "nodes": graph["nodes"],
+            "edges": graph["edges"],
+            "conflicts": _compute_conflicts(conn, payload.project_id),
+            "risks": detect_risks(graph["nodes"], graph["edges"]),
+            "evidence": evidence,
+            "evidence_truncated": len(evidence) >= DEFAULT_EVIDENCE_LIMIT,
+        }
+
+    # Only the answer is returned — context (including raw evidence.content/url) is never
+    # echoed back; it exists only to ground the LLM call, not as an API response payload.
+    answer = answer_question(payload.question, context)
+    return {"answer": answer}

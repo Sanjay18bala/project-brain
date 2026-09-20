@@ -98,6 +98,26 @@ def get_conflicted_nodes(conn, project_id):
     return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 
+DEFAULT_EVIDENCE_LIMIT = 50
+
+
+def get_evidence_for_project(conn, project_id, limit=DEFAULT_EVIDENCE_LIMIT):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT n.name, e.source_type, e.source_ref, e.content, e.url, e.occurred_at
+        FROM evidence e
+        JOIN nodes n ON n.id = e.node_id
+        WHERE e.project_id = %s
+        ORDER BY e.occurred_at DESC
+        LIMIT %s
+        """,
+        (project_id, limit),
+    )
+    cols = ["node_name", "source_type", "source_ref", "content", "url", "occurred_at"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
 def get_graph(conn, project_id):
     cur = conn.cursor()
     cur.execute("SELECT id, type, name, status, metadata FROM nodes WHERE project_id = %s", (project_id,))

@@ -1,16 +1,18 @@
 import { useState } from "react";
+import { AgentChat } from "./agent/AgentChat";
 import { ConflictView } from "./conflicts/ConflictView";
 import { GraphView } from "./graph/GraphView";
 import { RiskPanel } from "./risks/RiskPanel";
 
 const DEMO_PROJECT_ID = import.meta.env.VITE_DEMO_PROJECT_ID ?? "";
 
-type Tab = "graph" | "conflicts" | "risks";
+type Tab = "graph" | "conflicts" | "risks" | "agent";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "graph", label: "Graph" },
   { id: "conflicts", label: "Conflicts" },
   { id: "risks", label: "Risks" },
+  { id: "agent", label: "Agent" },
 ];
 
 export default function App() {
@@ -34,6 +36,7 @@ export default function App() {
         {tab === "graph" && <GraphView projectId={DEMO_PROJECT_ID} />}
         {tab === "conflicts" && <ConflictView projectId={DEMO_PROJECT_ID} />}
         {tab === "risks" && <RiskPanel projectId={DEMO_PROJECT_ID} />}
+        {tab === "agent" && <AgentChat projectId={DEMO_PROJECT_ID} />}
       </div>
     </div>
   );

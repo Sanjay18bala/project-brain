@@ -41,3 +41,15 @@ export async function fetchRisks(projectId: string): Promise<RisksResponse> {
   if (!res.ok) throw new Error(`Failed to fetch risks: ${res.status}`);
   return res.json();
 }
+
+export type InvestigateResponse = { answer: string };
+
+export async function investigate(projectId: string, question: string): Promise<InvestigateResponse> {
+  const res = await fetch(`${API_BASE}/agent/investigate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ project_id: projectId, question }),
+  });
+  if (!res.ok) throw new Error(`Failed to investigate: ${res.status}`);
+  return res.json();
+}
