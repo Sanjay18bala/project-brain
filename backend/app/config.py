@@ -10,6 +10,10 @@ SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
 API_KEY = os.getenv("API_KEY", "")
 DEFAULT_PROJECT_ID = os.getenv("DEFAULT_PROJECT_ID", "")
 
+# Origins allowed to call the API from a browser (comma-separated). The frontend sends a
+# custom X-API-Key header, which forces the browser to preflight with OPTIONS first.
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
+
 # Recency-decay time constant for conflict scoring (TechStack.md §4a). No "right" default —
 # tune against real usage; a fast-moving team may want minutes, not hours.
 RECENCY_HALF_LIFE_SECONDS = float(os.getenv("RECENCY_HALF_LIFE_SECONDS", str(24 * 60 * 60)))
