@@ -24,6 +24,10 @@ STALENESS_THRESHOLD_DAYS = float(os.getenv("STALENESS_THRESHOLD_DAYS", "3"))
 
 # How often the in-process staleness sweep runs. Default 1 hour.
 STALENESS_SWEEP_INTERVAL_SECONDS = float(os.getenv("STALENESS_SWEEP_INTERVAL_SECONDS", str(60 * 60)))
+
+# Bot token for outbound Slack messages (chat:write + im:write scopes). Distinct from
+# SLACK_SIGNING_SECRET, which only verifies inbound webhook requests.
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")

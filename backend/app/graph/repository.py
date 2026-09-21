@@ -86,14 +86,14 @@ def lock_node(conn, node_id):
     cur.execute("SELECT id FROM nodes WHERE id = %s FOR UPDATE", (node_id,))
 
 
-def add_state_change(conn, project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at):
+def add_state_change(conn, project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at, author=None):
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO state_changes (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO state_changes (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at, author)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at),
+        (project_id, node_id, source_type, source_ref, claimed_state, confidence, occurred_at, author),
     )
 
 
@@ -101,14 +101,42 @@ def get_state_changes_for_node(conn, node_id):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT source_type, source_ref, claimed_state, confidence, occurred_at
+        SELECT source_type, source_ref, claimed_state, confidence, occurred_at, author
         FROM state_changes WHERE node_id = %s
         ORDER BY occurred_at DESC
         """,
         (node_id,),
     )
-    cols = ["source_type", "source_ref", "claimed_state", "confidence", "occurred_at"]
+    cols = ["source_type", "source_ref", "claimed_state", "confidence", "occurred_at", "author"]
     return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def get_identity_links(conn, project_id) -> dict:
+    """{github_login: slack_user_id} for the project — see app.agents.alerts.resolve_slack_recipient."""
+    cur = conn.cursor()
+    cur.execute("SELECT github_login, slack_user_id FROM identity_links WHERE project_id = %s", (project_id,))
+    return dict(cur.fetchall())
+
+
+def has_action_been_taken(conn, project_id, node_id, action_type, recipient) -> bool:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM actions WHERE project_id = %s AND node_id = %s AND action_type = %s AND recipient = %s",
+        (project_id, node_id, action_type, recipient),
+    )
+    return cur.fetchone() is not None
+
+
+def record_action(conn, project_id, node_id, action_type, recipient, detail=None):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO actions (project_id, node_id, action_type, recipient, detail)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (project_id, node_id, action_type, recipient) DO NOTHING
+        """,
+        (project_id, node_id, action_type, recipient, detail),
+    )
 
 
 def set_node_status(conn, node_id, status):

@@ -1,0 +1,6 @@
+-- Manual GitHub-login -> Slack-user-id mapping for cross-platform conflict alerts.
+-- docs/roadmap-v2.md decision: no automatic inference for MVP — edit and run manually.
+--
+-- INSERT INTO identity_links (project_id, github_login, slack_user_id)
+-- VALUES ('00000000-0000-0000-0000-000000000001', 'priya-dev', 'U_PRIYA')
+-- ON CONFLICT (project_id, github_login) DO UPDATE SET slack_user_id = EXCLUDED.slack_user_id;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+logger = logging.getLogger(__name__)
+
+from ..agents.alerts import format_conflict_alert, resolve_slack_recipient
 from ..agents.deadlines import find_crossed_deadlines
 from ..agents.embeddings import embed_text
 from ..agents.extraction import extract
@@ -29,12 +33,15 @@ from ..graph.repository import (
     get_conflicted_nodes,
     get_evidence_for_project,
     get_graph,
+    get_identity_links,
     get_node_last_activity,
     get_state_changes_for_node,
+    has_action_been_taken,
     lock_node,
     log_event,
     mark_nodes_unknown,
     project_exists,
+    record_action,
     search_evidence_by_similarity,
     set_node_status,
     upsert_edge,
@@ -42,6 +49,7 @@ from ..graph.repository import (
 )
 from ..ingestion.github import verify_github_signature
 from ..ingestion.slack import verify_slack_signature
+from ..outbound.slack import send_dm
 from ..security import enforce_llm_rate_limit, require_api_key
 
 router = APIRouter()
@@ -85,7 +93,9 @@ def _write_extraction_to_graph(
 
     for change in extraction["state_changes"]:
         node_id = node_ids[change["entity"]]
-        add_state_change(conn, project_id, node_id, source_type, source_ref, change["new_state"], change["confidence"], occurred_at)
+        add_state_change(
+            conn, project_id, node_id, source_type, source_ref, change["new_state"], change["confidence"], occurred_at, author=author
+        )
 
     embedding = None
     if node_ids:
@@ -104,12 +114,38 @@ def _write_extraction_to_graph(
     # node — without it, two overlapping transactions can each miss the other's just-
     # inserted claim and both write KNOWN, silently swallowing the exact conflict this
     # feature exists to catch.
-    for node_id in set(node_ids.values()):
+    for node_name, node_id in node_ids.items():
         lock_node(conn, node_id)
         claims = get_state_changes_for_node(conn, node_id)
-        set_node_status(conn, node_id, "CONFLICTED" if is_conflicted(claims) else "KNOWN")
+        newly_conflicted = is_conflicted(claims)
+        set_node_status(conn, node_id, "CONFLICTED" if newly_conflicted else "KNOWN")
+        if newly_conflicted:
+            _send_conflict_alerts(conn, project_id, node_id, node_name, claims)
 
     return len(extraction["entities"])
+
+
+def _send_conflict_alerts(conn, project_id: uuid.UUID, node_id: uuid.UUID, node_name: str, claims: list[dict]) -> None:
+    """Best-effort: DMs each party to a conflict once ever per (node, recipient) — the
+    actions table's UNIQUE constraint backs this even under a race. A Slack failure (no
+    SLACK_BOT_TOKEN configured, network issue, etc.) is swallowed — an alert is a nice-to-
+    have on top of the conflict already being visible via GET /projects/{id}/conflicts and
+    the agent chat, never a hard requirement for event processing to succeed.
+    """
+    identity_links = get_identity_links(conn, project_id)
+    message = format_conflict_alert(node_name, claims)
+    for claim in claims:
+        slack_user_id = resolve_slack_recipient(claim, identity_links)
+        if not slack_user_id:
+            continue
+        if has_action_been_taken(conn, project_id, node_id, "conflict_alert", slack_user_id):
+            continue
+        try:
+            send_dm(slack_user_id, message)
+        except Exception:
+            logger.warning("conflict alert DM to %s failed for node %s", slack_user_id, node_id, exc_info=True)
+            continue
+        record_action(conn, project_id, node_id, "conflict_alert", slack_user_id, message)
 
 
 def _classify_github_event_type(payload: dict) -> str:
