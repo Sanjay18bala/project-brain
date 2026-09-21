@@ -120,3 +120,14 @@ matters (e.g. "this conflict needs someone's input" rather than "Alex hasn't res
 
 Not yet scoped in detail — cross-platform identity linking (question 2 above) needs a product decision
 before Slice 10 can actually DM the right person for a GitHub-sourced conflict.
+
+## Slice 12 (planned, after 10–11): Google Chat as a third ingestion source
+
+Some companies use Google Chat spaces instead of (or alongside) Slack. The extraction pipeline has been
+source-agnostic since Slice 1 — `_write_extraction_to_graph` only takes a `source_type` string, so this is
+architecturally a clean additive slice, same shape as Slack was on top of GitHub. Needs its own: (1) request
+verification (Google Chat apps verify via a bearer token / JWT against Google's public keys — a different
+scheme from GitHub's HMAC or Slack's `v0=` signing, needs its own `ingestion/googlechat.py`), (2) its own
+payload parser (Google Chat's event JSON shape differs from Slack's), (3) a new `/events/googlechat` route.
+Nothing in conflict/risk/staleness/deadline detection needs to change. Deliberately sequenced after Slice
+10/11 so the alerting pattern gets fully sorted out on one platform (Slack) before extending it to a second.
