@@ -42,6 +42,21 @@ export async function fetchRisks(projectId: string): Promise<RisksResponse> {
   return res.json();
 }
 
+export type DashboardCounts = { active: number; blocked: number; conflicted: number; unknown: number };
+export type CrossedDeadline = { deadline: GraphNode; date: string; affected_tasks: GraphNode[] };
+export type DashboardResponse = {
+  counts: DashboardCounts;
+  risks: Risk[];
+  conflicts: Conflict[];
+  crossed_deadlines: CrossedDeadline[];
+};
+
+export async function fetchDashboard(projectId: string): Promise<DashboardResponse> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/dashboard`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch dashboard: ${res.status}`);
+  return res.json();
+}
+
 export type InvestigateResponse = { answer: string };
 
 export async function investigate(projectId: string, question: string): Promise<InvestigateResponse> {

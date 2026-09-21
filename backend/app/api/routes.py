@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 logger = logging.getLogger(__name__)
 
 from ..agents.alerts import format_conflict_alert, resolve_slack_recipient
+from ..agents.dashboard import summarize_node_counts
 from ..agents.deadlines import find_crossed_deadlines
 from ..agents.embeddings import embed_text
 from ..agents.extraction import extract
@@ -323,6 +324,25 @@ def project_deadlines(project_id: uuid.UUID):
 
     today = datetime.now(timezone.utc).date()
     return {"crossed_deadlines": find_crossed_deadlines(graph["nodes"], graph["edges"], today)}
+
+
+@router.get("/projects/{project_id}/dashboard", dependencies=[Depends(require_api_key)])
+def project_dashboard(project_id: uuid.UUID):
+    """One at-a-glance bundle (PRD.md §10.1) instead of the frontend firing four separate
+    requests (graph/conflicts/risks/deadlines) on load."""
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        graph = get_graph(conn, project_id)
+        conflicts = _compute_conflicts(conn, project_id)
+
+    today = datetime.now(timezone.utc).date()
+    return {
+        "counts": summarize_node_counts(graph["nodes"], graph["edges"]),
+        "risks": detect_risks(graph["nodes"], graph["edges"]),
+        "conflicts": conflicts,
+        "crossed_deadlines": find_crossed_deadlines(graph["nodes"], graph["edges"], today),
+    }
 
 
 class InvestigateRequest(BaseModel):
