@@ -4,12 +4,23 @@ Evidence-backed project state engine. See [`PRD.md`](PRD.md) for product scope a
 
 ## What's built
 
-GitHub + Slack webhooks → Nemotron entity/relationship/state extraction → Postgres graph, with:
+GitHub + Slack + Google Chat → Nemotron entity/relationship/state/deadline extraction → Postgres graph
+(nodes/edges/evidence/state_changes, plus a full raw `events` log independent of what extraction
+recognizes), with:
 
-- Conflict detection — recency-scored claims when sources disagree (`GET /projects/{id}/conflicts`)
-- Dependency/risk detection — BLOCKS/DEPENDS_ON chains propagated from conflicted nodes (`GET /projects/{id}/risks`)
-- Agent investigation — free-text Q&A grounded only in the graph/evidence, never unsupported generation (`POST /agent/investigate`)
-- A React dashboard with Graph / Conflicts / Risks / Agent tabs
+- Conflict detection — recency-scored claims when sources disagree, DMs both parties on Slack once
+  ever per conflict (`GET /projects/{id}/conflicts`)
+- Dependency/risk detection — BLOCKS/DEPENDS_ON chains propagated from conflicted nodes
+  (`GET /projects/{id}/risks`)
+- Staleness detection — a periodic sweep marks a quiet `KNOWN` node `UNKNOWN`, reverses automatically the
+  next time it's touched by a real event
+- Deadline tracking — `DEADLINE` nodes/`DUE_BEFORE` edges, flags dates that have passed
+  (`GET /projects/{id}/deadlines`)
+- Agent investigation — free-text Q&A grounded in the graph, semantic-searched evidence, and current
+  conflicts/risks/deadlines, never unsupported generation (`POST /agent/investigate`)
+- A React dashboard (default landing view) plus Graph / Conflicts / Risks / Agent tabs
+
+See [`docs/roadmap-v2.md`](docs/roadmap-v2.md) for the full slice-by-slice history and what's still open.
 
 ## Local development
 
@@ -19,10 +30,29 @@ docker compose up
 psql "$DATABASE_URL" -f database/seed/demo_project.sql   # creates the single demo project
 ```
 
-GitHub and Slack webhooks need a public HTTPS URL — tunnel `POST /events/github` and `POST /events/slack`
-with `ngrok` or `smee.io` (see TechStack.md §15). Both routes are authenticated by their own webhook
-signature, not `API_KEY` — GitHub/Slack can't attach custom headers to their deliveries. `API_KEY` only
-guards `GET /projects/{id}/graph`, called by the frontend.
+GitHub, Slack, and Google Chat all need a public HTTPS URL to deliver events to — tunnel
+`POST /events/github`, `POST /events/slack`, and `POST /events/googlechat` with `ngrok` or `smee.io`
+(see TechStack.md §15). All three routes are authenticated by their own request signature/bearer token,
+not `API_KEY` — none of them can attach custom headers to their deliveries. `API_KEY` only guards the
+first-party `GET`/`POST` routes the frontend and agent chat call.
+
+### Google Chat setup
+
+Unlike GitHub (HMAC) and Slack (`v0=` signing), Google Chat verifies with a Google-signed OIDC bearer
+token, checked via the `google-auth` library against Google's public keys — not a shared secret you
+configure. To wire up a real Google Chat app:
+
+1. Create a Chat app in [Google Cloud Console](https://console.cloud.google.com/apis/library/chat.googleapis.com)
+   (APIs & Services → Google Chat API → Configuration), set its connection type to **HTTP endpoint URL**,
+   and point that URL at your public `POST /events/googlechat` (via a tunnel for local dev).
+2. Set `GOOGLE_CHAT_AUDIENCE` to that exact same URL — it's the expected `audience` claim on the bearer
+   token Google sends, not a secret to keep private.
+3. Add the app to a space. Messages there will flow into the same extraction pipeline as GitHub/Slack.
+
+We couldn't test a real signed request locally the way we did for GitHub/Slack (there's no way to
+self-sign a token Google's verifier will accept) — `backend/app/ingestion/googlechat.py`'s tests
+monkeypatch the verification library instead. The 401 auth boundary itself is confirmed working; the
+"accept a real token" path needs an actual Google Chat app pointed at a running instance to verify live.
 
 Backend tests:
 

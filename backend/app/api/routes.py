@@ -9,8 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-logger = logging.getLogger(__name__)
-
 from ..agents.alerts import format_conflict_alert, resolve_slack_recipient
 from ..agents.dashboard import summarize_node_counts
 from ..agents.deadlines import find_crossed_deadlines
@@ -49,9 +47,12 @@ from ..graph.repository import (
     upsert_node,
 )
 from ..ingestion.github import verify_github_signature
+from ..ingestion.googlechat import verify_google_chat_request
 from ..ingestion.slack import verify_slack_signature
 from ..outbound.slack import send_dm
 from ..security import enforce_llm_rate_limit, require_api_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -276,6 +277,70 @@ async def receive_slack_event(request: Request):
 
     entity_count = await run_in_threadpool(_process_slack_event, project_id, event)
     return {"status": "processed", "entities": entity_count}
+
+
+def _googlechat_time_to_datetime(create_time: str | None) -> datetime:
+    if not create_time:
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(create_time.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(timezone.utc)
+
+
+def _log_googlechat_event(project_id: uuid.UUID, payload: dict) -> None:
+    with get_conn() as conn:
+        log_event(conn, project_id, "googlechat", payload.get("type", "unknown"), payload, datetime.now(timezone.utc))
+
+
+def _process_googlechat_event(project_id: uuid.UUID, message: dict) -> int:
+    """Runs the extraction + DB writes off the event loop, same as GitHub/Slack events."""
+    text = message.get("text", "")[:2000]
+    extraction = extract(text)
+    occurred_at = _googlechat_time_to_datetime(message.get("createTime"))
+    author = message.get("sender", {}).get("name")
+
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        return _write_extraction_to_graph(
+            conn,
+            project_id,
+            extraction,
+            source_type="googlechat",
+            source_ref=message.get("name", ""),
+            content=text,
+            url=None,
+            occurred_at=occurred_at,
+            author=author[:128] if author else None,
+        )
+
+
+@router.post("/events/googlechat")
+async def receive_googlechat_event(request: Request):
+    """No X-API-Key here either: Google's signed bearer token is the auth boundary — see
+    app/ingestion/googlechat.py. Google Chat can't attach a custom header any more than
+    GitHub or Slack can."""
+    auth_header = request.headers.get("Authorization", "")
+    bearer_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else None
+    if not verify_google_chat_request(bearer_token):
+        raise HTTPException(status_code=401, detail="invalid bearer token")
+
+    body = await request.body()
+    payload = json.loads(body)
+    project_id = _default_project_id()
+
+    if payload.get("type") == "MESSAGE":
+        await run_in_threadpool(_log_googlechat_event, project_id, payload)
+        message = payload.get("message", {})
+        if message.get("text"):
+            entity_count = await run_in_threadpool(_process_googlechat_event, project_id, message)
+            return {"status": "processed", "entities": entity_count}
+
+    # Non-MESSAGE events (ADDED_TO_SPACE, REMOVED_FROM_SPACE, CARD_CLICKED, ...) and
+    # empty messages are acknowledged but not processed. An empty JSON body tells Google
+    # Chat's HTTP endpoint contract "no reply needed."
+    return {}
 
 
 @router.get("/projects/{project_id}/graph", dependencies=[Depends(require_api_key)])

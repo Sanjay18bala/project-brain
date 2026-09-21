@@ -7,6 +7,13 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
+
+# The public URL Google Chat sends requests to (e.g. https://your-domain.com/events/googlechat).
+# Used as the expected audience when verifying Google's signed bearer token — see
+# app/ingestion/googlechat.py. Not a shared secret like GITHUB_WEBHOOK_SECRET/
+# SLACK_SIGNING_SECRET; Google Chat's request verification works differently (a
+# Google-signed OIDC token, not HMAC).
+GOOGLE_CHAT_AUDIENCE = os.getenv("GOOGLE_CHAT_AUDIENCE", "")
 API_KEY = os.getenv("API_KEY", "")
 DEFAULT_PROJECT_ID = os.getenv("DEFAULT_PROJECT_ID", "")
 

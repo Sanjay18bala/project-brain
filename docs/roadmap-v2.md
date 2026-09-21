@@ -127,7 +127,7 @@ nudges (both listed in "Expanded use cases" above) would reuse the same `actions
 `_send_conflict_alerts`. Deliberately deferred: conflict alerts were the concrete feature originally asked
 for; the other two are the same pattern, not a new architecture, so they're cheap to add later on demand.
 
-## Slice 12 (planned, after 10–11): Google Chat as a third ingestion source
+## Slice 12 — Done (see commit history): Google Chat as a third ingestion source
 
 Some companies use Google Chat spaces instead of (or alongside) Slack. The extraction pipeline has been
 source-agnostic since Slice 1 — `_write_extraction_to_graph` only takes a `source_type` string, so this is
@@ -137,3 +137,17 @@ scheme from GitHub's HMAC or Slack's `v0=` signing, needs its own `ingestion/goo
 payload parser (Google Chat's event JSON shape differs from Slack's), (3) a new `/events/googlechat` route.
 Nothing in conflict/risk/staleness/deadline detection needs to change. Deliberately sequenced after Slice
 10/11 so the alerting pattern gets fully sorted out on one platform (Slack) before extending it to a second.
+
+**Built as**: `backend/app/ingestion/googlechat.py` (`verify_google_chat_request`, using `google-auth`'s
+`id_token.verify_oauth2_token` against `GOOGLE_CHAT_AUDIENCE`), `POST /events/googlechat` in `routes.py`
+mirroring the Slack route's shape exactly (log full history for `MESSAGE` events before any filtering,
+then extract/write via the same source-agnostic `_write_extraction_to_graph`).
+
+**Real finding**: `google-auth`'s `google.auth.transport.requests` needs the separate `requests` package
+— not a transitive dependency, would have broken the Docker build if not caught locally first.
+
+**Known limitation**: unlike GitHub/Slack, there's no way to self-sign a token Google's real verifier will
+accept, so `demo_events.py`-style live end-to-end testing isn't possible without an actual registered
+Google Chat app pointed at a running instance. Tests monkeypatch the verification library instead; the
+401 auth boundary was confirmed live against the running container, the "accept a real token" path was
+not.
