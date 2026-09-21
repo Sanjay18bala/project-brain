@@ -114,7 +114,7 @@ matters (e.g. "this conflict needs someone's input" rather than "Alex hasn't res
 | 6 | Real event logging (`events` table) + sender/author identity capture | nothing — foundational | **Done** (`bb9cc76`) |
 | 7 | Semantic evidence search (embeddings + pgvector query), wired into `/agent/investigate` | 6 | **Done** (`aa452fd`) — also fixed a pre-existing bug: `evidence.embedding` was declared `vector(1536)` since slice 0, a guess never checked against a real model; the real Nebius embedding model (`Qwen/Qwen3-Embedding-8B`) outputs 4096 dims |
 | 8 | Staleness/`UNKNOWN` detection + the periodic sweep worker | 6 | **Done** (`5eb4697`) |
-| 9 | Deadline tracking (`DEADLINE` nodes, `DUE_BEFORE`, crossed-deadline detection) | 6, 8 (reuses the sweep) | Not started |
+| 9 | Deadline tracking (`DEADLINE` nodes, `DUE_BEFORE`, crossed-deadline detection) | 6 | **Done** (`73f4daf`) — computed-on-read like risk detection, didn't end up needing the sweep |
 | 10 | Outbound Slack alerting (`actions` table, bot client, conflict/deadline/staleness alert policies) | 6, 8, 9 | Not started |
 | 11 | PM Dashboard view (`PRD.md §10.1`) | 6–9 | Not started |
 
