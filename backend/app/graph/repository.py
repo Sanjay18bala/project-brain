@@ -168,6 +168,31 @@ def search_evidence_by_similarity(conn, project_id, query_embedding, limit=25):
     return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 
+def get_node_last_activity(conn, project_id):
+    """For every node in the project, its status and most recent evidence.occurred_at —
+    input to the staleness sweep (app.agents.staleness.find_stale_nodes)."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT n.id, n.status, MAX(e.occurred_at) AS last_activity
+        FROM nodes n
+        LEFT JOIN evidence e ON e.node_id = n.id
+        WHERE n.project_id = %s
+        GROUP BY n.id, n.status
+        """,
+        (project_id,),
+    )
+    cols = ["id", "status", "last_activity"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def mark_nodes_unknown(conn, node_ids):
+    if not node_ids:
+        return
+    cur = conn.cursor()
+    cur.execute("UPDATE nodes SET status = 'UNKNOWN', updated_at = now() WHERE id = ANY(%s)", (node_ids,))
+
+
 def get_graph(conn, project_id):
     cur = conn.cursor()
     cur.execute("SELECT id, type, name, status, metadata FROM nodes WHERE project_id = %s", (project_id,))

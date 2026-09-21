@@ -13,7 +13,14 @@ from ..agents.extraction import extract
 from ..agents.investigation import answer_question
 from ..agents.reconciliation import is_conflicted, rank_claims
 from ..agents.risk import detect_risks
-from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, RECENCY_HALF_LIFE_SECONDS, SLACK_SIGNING_SECRET
+from ..agents.staleness import find_stale_nodes
+from ..config import (
+    DEFAULT_PROJECT_ID,
+    GITHUB_WEBHOOK_SECRET,
+    RECENCY_HALF_LIFE_SECONDS,
+    SLACK_SIGNING_SECRET,
+    STALENESS_THRESHOLD_DAYS,
+)
 from ..db import get_conn
 from ..graph.repository import (
     add_evidence,
@@ -21,9 +28,11 @@ from ..graph.repository import (
     get_conflicted_nodes,
     get_evidence_for_project,
     get_graph,
+    get_node_last_activity,
     get_state_changes_for_node,
     lock_node,
     log_event,
+    mark_nodes_unknown,
     project_exists,
     search_evidence_by_similarity,
     set_node_status,
@@ -321,3 +330,25 @@ def agent_investigate(payload: InvestigateRequest):
     # echoed back; it exists only to ground the LLM call, not as an API response payload.
     answer = answer_question(payload.question, context)
     return {"answer": answer}
+
+
+def run_staleness_sweep(conn, project_id: uuid.UUID) -> list[uuid.UUID]:
+    """Marks KNOWN nodes with no evidence within STALENESS_THRESHOLD_DAYS as UNKNOWN.
+    Returns the node ids that were marked. Called both by the manual sweep route below
+    and by the periodic background loop (see app/background.py)."""
+    nodes = get_node_last_activity(conn, project_id)
+    stale_ids = find_stale_nodes(nodes, datetime.now(timezone.utc), STALENESS_THRESHOLD_DAYS)
+    mark_nodes_unknown(conn, stale_ids)
+    return stale_ids
+
+
+@router.post("/projects/{project_id}/sweep", dependencies=[Depends(require_api_key)])
+def project_sweep(project_id: uuid.UUID):
+    """Manually triggers the staleness sweep immediately, rather than waiting for the
+    periodic interval — useful for demos and testing (see docs/roadmap-v2.md)."""
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        stale_ids = run_staleness_sweep(conn, project_id)
+
+    return {"marked_unknown": stale_ids}

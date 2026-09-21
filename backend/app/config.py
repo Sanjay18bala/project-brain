@@ -17,6 +17,13 @@ CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://l
 # Recency-decay time constant for conflict scoring (TechStack.md §4a). No "right" default —
 # tune against real usage; a fast-moving team may want minutes, not hours.
 RECENCY_HALF_LIFE_SECONDS = float(os.getenv("RECENCY_HALF_LIFE_SECONDS", str(24 * 60 * 60)))
+
+# How long a KNOWN node can go without new evidence before the periodic sweep marks it
+# UNKNOWN (PRD.md §7.5). Matches PRD's illustrative "3 days old" example as the default.
+STALENESS_THRESHOLD_DAYS = float(os.getenv("STALENESS_THRESHOLD_DAYS", "3"))
+
+# How often the in-process staleness sweep runs. Default 1 hour.
+STALENESS_SWEEP_INTERVAL_SECONDS = float(os.getenv("STALENESS_SWEEP_INTERVAL_SECONDS", str(60 * 60)))
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
