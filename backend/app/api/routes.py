@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from ..agents.deadlines import find_crossed_deadlines
 from ..agents.embeddings import embed_text
 from ..agents.extraction import extract
 from ..agents.investigation import answer_question
@@ -277,6 +278,17 @@ def project_risks(project_id: uuid.UUID):
     return {"risks": detect_risks(graph["nodes"], graph["edges"])}
 
 
+@router.get("/projects/{project_id}/deadlines", dependencies=[Depends(require_api_key)])
+def project_deadlines(project_id: uuid.UUID):
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        graph = get_graph(conn, project_id)
+
+    today = datetime.now(timezone.utc).date()
+    return {"crossed_deadlines": find_crossed_deadlines(graph["nodes"], graph["edges"], today)}
+
+
 class InvestigateRequest(BaseModel):
     project_id: uuid.UUID
     question: str = Field(min_length=1, max_length=500)
@@ -322,6 +334,7 @@ def agent_investigate(payload: InvestigateRequest):
             "edges": graph["edges"],
             "conflicts": _compute_conflicts(conn, payload.project_id),
             "risks": detect_risks(graph["nodes"], graph["edges"]),
+            "crossed_deadlines": find_crossed_deadlines(graph["nodes"], graph["edges"], datetime.now(timezone.utc).date()),
             "evidence": evidence,
             "evidence_truncated": evidence_truncated,
         }
