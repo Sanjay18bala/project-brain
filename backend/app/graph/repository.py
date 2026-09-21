@@ -1,6 +1,12 @@
 from psycopg.types.json import Jsonb
 
 
+def _to_vector_literal(embedding: list[float]) -> str:
+    """pgvector's text input format is a bare '[v1,v2,...]' literal, cast via ::vector in
+    SQL. Avoids adding the `pgvector` pip package as a dependency for something this small."""
+    return "[" + ",".join(repr(float(x)) for x in embedding) + "]"
+
+
 def project_exists(conn, project_id) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
@@ -42,14 +48,15 @@ def upsert_edge(conn, project_id, source_id, target_id, relationship, confidence
     return cur.fetchone()[0]
 
 
-def add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=None):
+def add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=None, embedding=None):
     cur = conn.cursor()
+    embedding_literal = _to_vector_literal(embedding) if embedding is not None else None
     cur.execute(
         """
-        INSERT INTO evidence (project_id, node_id, source_type, source_ref, content, url, occurred_at, author)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO evidence (project_id, node_id, source_type, source_ref, content, url, occurred_at, author, embedding)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector)
         """,
-        (project_id, node_id, source_type, source_ref, content, url, occurred_at, author),
+        (project_id, node_id, source_type, source_ref, content, url, occurred_at, author, embedding_literal),
     )
 
 
@@ -126,7 +133,7 @@ def get_evidence_for_project(conn, project_id, limit=DEFAULT_EVIDENCE_LIMIT):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT n.name, e.source_type, e.source_ref, e.content, e.url, e.occurred_at
+        SELECT e.id, n.name, e.source_type, e.source_ref, e.content, e.url, e.occurred_at, e.author
         FROM evidence e
         JOIN nodes n ON n.id = e.node_id
         WHERE e.project_id = %s
@@ -135,7 +142,29 @@ def get_evidence_for_project(conn, project_id, limit=DEFAULT_EVIDENCE_LIMIT):
         """,
         (project_id, limit),
     )
-    cols = ["node_name", "source_type", "source_ref", "content", "url", "occurred_at"]
+    cols = ["id", "node_name", "source_type", "source_ref", "content", "url", "occurred_at", "author"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def search_evidence_by_similarity(conn, project_id, query_embedding, limit=25):
+    """Cosine-similarity search over evidence with a non-NULL embedding. Rows written
+    before this slice (or where the embedding call failed at write time) have a NULL
+    embedding and are excluded — they're still findable via get_evidence_for_project."""
+    cur = conn.cursor()
+    embedding_literal = _to_vector_literal(query_embedding)
+    cur.execute(
+        """
+        SELECT e.id, n.name, e.source_type, e.source_ref, e.content, e.url, e.occurred_at, e.author,
+               1 - (e.embedding <=> %s::vector) AS similarity
+        FROM evidence e
+        JOIN nodes n ON n.id = e.node_id
+        WHERE e.project_id = %s AND e.embedding IS NOT NULL
+        ORDER BY e.embedding <=> %s::vector
+        LIMIT %s
+        """,
+        (embedding_literal, project_id, embedding_literal, limit),
+    )
+    cols = ["id", "node_name", "source_type", "source_ref", "content", "url", "occurred_at", "author", "similarity"]
     return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 

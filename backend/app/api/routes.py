@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from ..agents.embeddings import embed_text
 from ..agents.extraction import extract
 from ..agents.investigation import answer_question
 from ..agents.reconciliation import is_conflicted, rank_claims
@@ -15,7 +16,6 @@ from ..agents.risk import detect_risks
 from ..config import DEFAULT_PROJECT_ID, GITHUB_WEBHOOK_SECRET, RECENCY_HALF_LIFE_SECONDS, SLACK_SIGNING_SECRET
 from ..db import get_conn
 from ..graph.repository import (
-    DEFAULT_EVIDENCE_LIMIT,
     add_evidence,
     add_state_change,
     get_conflicted_nodes,
@@ -25,6 +25,7 @@ from ..graph.repository import (
     lock_node,
     log_event,
     project_exists,
+    search_evidence_by_similarity,
     set_node_status,
     upsert_edge,
     upsert_node,
@@ -76,8 +77,15 @@ def _write_extraction_to_graph(
         node_id = node_ids[change["entity"]]
         add_state_change(conn, project_id, node_id, source_type, source_ref, change["new_state"], change["confidence"], occurred_at)
 
+    embedding = None
+    if node_ids:
+        try:
+            embedding = embed_text(content)
+        except Exception:
+            embedding = None  # evidence is still stored; just not semantically searchable this time
+
     for node_id in node_ids.values():
-        add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=author)
+        add_evidence(conn, project_id, node_id, source_type, source_ref, content, url, occurred_at, author=author, embedding=embedding)
 
     # Recompute conflict status for every touched node from its full claim history —
     # never derived from just this event, so a past conflict stays CONFLICTED until
@@ -265,6 +273,33 @@ class InvestigateRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
 
 
+_SEMANTIC_EVIDENCE_LIMIT = 25
+_RECENT_EVIDENCE_LIMIT = 25
+
+
+def _gather_evidence(conn, project_id: uuid.UUID, question: str) -> tuple[list[dict], bool]:
+    """Blends evidence relevant to the question (semantic search) with evidence relevant
+    to "what's happening right now" (recency) — a pure recency window misses old context;
+    pure relevance misses fresh activity the question didn't ask about by name."""
+    try:
+        query_embedding = embed_text(question)
+        semantic = search_evidence_by_similarity(conn, project_id, query_embedding, limit=_SEMANTIC_EVIDENCE_LIMIT)
+    except Exception:
+        semantic = []  # degrade to recency-only rather than failing the whole question
+
+    recent = get_evidence_for_project(conn, project_id, limit=_RECENT_EVIDENCE_LIMIT)
+
+    seen: set = set()
+    combined = []
+    for row in semantic + recent:
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
+        combined.append(row)
+
+    return combined, len(recent) >= _RECENT_EVIDENCE_LIMIT
+
+
 @router.post("/agent/investigate", dependencies=[Depends(require_api_key), Depends(enforce_llm_rate_limit)])
 def agent_investigate(payload: InvestigateRequest):
     with get_conn() as conn:
@@ -272,14 +307,14 @@ def agent_investigate(payload: InvestigateRequest):
             raise HTTPException(status_code=404, detail="unknown project")
 
         graph = get_graph(conn, payload.project_id)
-        evidence = get_evidence_for_project(conn, payload.project_id)
+        evidence, evidence_truncated = _gather_evidence(conn, payload.project_id, payload.question)
         context = {
             "nodes": graph["nodes"],
             "edges": graph["edges"],
             "conflicts": _compute_conflicts(conn, payload.project_id),
             "risks": detect_risks(graph["nodes"], graph["edges"]),
             "evidence": evidence,
-            "evidence_truncated": len(evidence) >= DEFAULT_EVIDENCE_LIMIT,
+            "evidence_truncated": evidence_truncated,
         }
 
     # Only the answer is returned — context (including raw evidence.content/url) is never

@@ -20,3 +20,4 @@ RECENCY_HALF_LIFE_SECONDS = float(os.getenv("RECENCY_HALF_LIFE_SECONDS", str(24 
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
