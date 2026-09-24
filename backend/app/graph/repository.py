@@ -13,6 +13,41 @@ def project_exists(conn, project_id) -> bool:
     return cur.fetchone() is not None
 
 
+def create_project(conn, name: str):
+    cur = conn.cursor()
+    cur.execute("INSERT INTO projects (name) VALUES (%s) RETURNING id", (name,))
+    return cur.fetchone()[0]
+
+
+def list_projects(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, created_at FROM projects ORDER BY created_at DESC")
+    cols = ["id", "name", "created_at"]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def create_connection(conn, project_id, platform: str, external_id: str):
+    """Links an external platform identity (a GitHub App installation id, for now) to a
+    project. UNIQUE (platform, external_id) on the table means installing the same
+    external account on a second project fails loudly rather than silently re-pointing it."""
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO connections (project_id, platform, external_id) VALUES (%s, %s, %s) RETURNING id",
+        (project_id, platform, external_id),
+    )
+    return cur.fetchone()[0]
+
+
+def get_project_id_for_installation(conn, external_id: str, platform: str = "github"):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT project_id FROM connections WHERE platform = %s AND external_id = %s",
+        (platform, external_id),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
 def upsert_node(conn, project_id, type_, name, status="KNOWN", metadata=None):
     """Identity is (project_id, name) — not type — so the same real-world entity typed
     differently across sources (a GitHub PR vs. a Slack topic) still resolves to one node

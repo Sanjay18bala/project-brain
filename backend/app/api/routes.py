@@ -29,6 +29,7 @@ from ..db import get_conn
 from ..graph.repository import (
     add_evidence,
     add_state_change,
+    create_project,
     get_conflicted_nodes,
     get_evidence_for_project,
     get_graph,
@@ -36,6 +37,7 @@ from ..graph.repository import (
     get_node_last_activity,
     get_state_changes_for_node,
     has_action_been_taken,
+    list_projects,
     lock_node,
     log_event,
     mark_nodes_unknown,
@@ -341,6 +343,23 @@ async def receive_googlechat_event(request: Request):
     # empty messages are acknowledged but not processed. An empty JSON body tells Google
     # Chat's HTTP endpoint contract "no reply needed."
     return {}
+
+
+class CreateProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/projects", dependencies=[Depends(require_api_key)])
+def create_project_route(payload: CreateProjectRequest):
+    with get_conn() as conn:
+        project_id = create_project(conn, payload.name)
+    return {"id": project_id, "name": payload.name}
+
+
+@router.get("/projects", dependencies=[Depends(require_api_key)])
+def list_projects_route():
+    with get_conn() as conn:
+        return {"projects": list_projects(conn)}
 
 
 @router.get("/projects/{project_id}/graph", dependencies=[Depends(require_api_key)])
