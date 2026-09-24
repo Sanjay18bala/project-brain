@@ -1,3 +1,5 @@
+import secrets
+
 from psycopg.types.json import Jsonb
 
 
@@ -43,6 +45,34 @@ def get_project_id_for_installation(conn, external_id: str, platform: str = "git
     cur.execute(
         "SELECT project_id FROM connections WHERE platform = %s AND external_id = %s",
         (platform, external_id),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def create_connect_code(conn, project_id, platform: str) -> str:
+    """Google Chat has no OAuth-install flow we control (a PM adds the bot to a space
+    through Google's own UI), so we authenticate the connect request the other way: a
+    short-lived single-use code the PM types into the space, matched in the webhook
+    handler (docs/roadmap-v3-onboarding.md's GitHub `state` param serves the equivalent
+    purpose there)."""
+    cur = conn.cursor()
+    code = secrets.token_hex(4)
+    cur.execute(
+        "INSERT INTO connect_codes (code, project_id, platform) VALUES (%s, %s, %s)",
+        (code, project_id, platform),
+    )
+    return code
+
+
+def consume_connect_code(conn, code: str, platform: str):
+    """Single-use, 30-minute expiry — deleting on match is what makes it single-use
+    without a separate row lock: only one DELETE can ever match a given primary key."""
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM connect_codes WHERE code = %s AND platform = %s "
+        "AND created_at > now() - interval '30 minutes' RETURNING project_id",
+        (code, platform),
     )
     row = cur.fetchone()
     return row[0] if row else None

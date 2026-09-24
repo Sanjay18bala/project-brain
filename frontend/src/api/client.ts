@@ -85,6 +85,16 @@ export async function getGithubInstallUrl(projectId: string): Promise<string> {
   return data.install_url;
 }
 
+export async function getGoogleChatConnectCode(projectId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/connections/googlechat/code?project_id=${projectId}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to get Google Chat connect code: ${res.status}`);
+  const data = await res.json();
+  return data.code;
+}
+
 export type InvestigateResponse = { answer: string };
 
 export async function investigate(projectId: string, question: string): Promise<InvestigateResponse> {

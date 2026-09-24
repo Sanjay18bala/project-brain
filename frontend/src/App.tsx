@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentChat } from "./agent/AgentChat";
-import { createProject, fetchProjects, getGithubInstallUrl, type Project } from "./api/client";
+import { createProject, fetchProjects, getGithubInstallUrl, getGoogleChatConnectCode, type Project } from "./api/client";
 import { ConflictView } from "./conflicts/ConflictView";
 import { Dashboard } from "./dashboard/Dashboard";
 import { GraphView } from "./graph/GraphView";
@@ -47,6 +47,14 @@ export default function App() {
     window.location.href = url;
   }
 
+  async function handleConnectGoogleChat() {
+    if (!projectId) return;
+    const code = await getGoogleChatConnectCode(projectId);
+    window.alert(
+      `1. Add the Project Brain bot to your Google Chat space.\n2. In that space, send:\n\nconnect ${code}\n\nThis code expires in 30 minutes.`,
+    );
+  }
+
   return (
     <div className="flex h-screen w-full flex-col">
       <div className="flex items-center gap-4 border-b p-2">
@@ -80,6 +88,9 @@ export default function App() {
           </button>
           <button className="border rounded px-2 py-1" onClick={handleConnectGithub} disabled={!projectId}>
             Connect GitHub
+          </button>
+          <button className="border rounded px-2 py-1" onClick={handleConnectGoogleChat} disabled={!projectId}>
+            Connect Google Chat
           </button>
         </div>
       </div>

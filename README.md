@@ -47,7 +47,14 @@ configure. To wire up a real Google Chat app:
    and point that URL at your public `POST /events/googlechat` (via a tunnel for local dev).
 2. Set `GOOGLE_CHAT_AUDIENCE` to that exact same URL — it's the expected `audience` claim on the bearer
    token Google sends, not a secret to keep private.
-3. Add the app to a space. Messages there will flow into the same extraction pipeline as GitHub/Slack.
+3. Add the app to a space.
+4. In the Project Brain UI, select the project and click **Connect Google Chat** — this calls the
+   authenticated `POST /connections/googlechat/code` route and shows a short single-use code (30-minute
+   expiry). Google Chat has no OAuth-install redirect the way GitHub Apps do, so the connect flow runs in
+   reverse: type `connect <code>` as a message in the space you just added the app to. The webhook handler
+   matches the code, binds that space to the selected project in the `connections` table, and confirms with
+   a reply in the space. From then on, messages in that space flow into that project's extraction pipeline;
+   spaces with no connection fall back to the single demo project (`DEFAULT_PROJECT_ID`).
 
 We couldn't test a real signed request locally the way we did for GitHub/Slack (there's no way to
 self-sign a token Google's verifier will accept) — `backend/app/ingestion/googlechat.py`'s tests

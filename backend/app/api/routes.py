@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -30,6 +31,8 @@ from ..db import get_conn
 from ..graph.repository import (
     add_evidence,
     add_state_change,
+    consume_connect_code,
+    create_connect_code,
     create_connection,
     create_project,
     get_conflicted_nodes,
@@ -384,6 +387,41 @@ def _process_googlechat_event(project_id: uuid.UUID, message: dict) -> int:
         )
 
 
+@router.post("/connections/googlechat/code", dependencies=[Depends(require_api_key)])
+def googlechat_connect_code(project_id: uuid.UUID):
+    """Google Chat has no OAuth-install redirect we control (the PM adds the bot to a
+    space through Google's own UI) — so the PM gets this code from our (authenticated)
+    UI, then types it into the space, closing the loop the other way round from GitHub's
+    install-then-callback flow."""
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+        code = create_connect_code(conn, project_id, "googlechat")
+    return {"code": code}
+
+
+def _resolve_googlechat_project_id(payload: dict) -> uuid.UUID | None:
+    """A Google Chat event always carries the space it happened in - use it to route to
+    the right project via the connections table, same pattern as GitHub's installation.id
+    (roadmap-v3 task 5). A payload with no space at all falls back to the single demo
+    project rather than being dropped."""
+    space_name = payload.get("space", {}).get("name")
+    if space_name:
+        with get_conn() as conn:
+            resolved = get_project_id_for_installation(conn, space_name, platform="googlechat")
+        if resolved:
+            return resolved
+    return _default_project_id()
+
+
+def _try_consume_connect_code(text: str) -> uuid.UUID | None:
+    match = re.match(r"^\s*connect\s+([0-9a-f]{8})\s*$", text, re.IGNORECASE)
+    if not match:
+        return None
+    with get_conn() as conn:
+        return consume_connect_code(conn, match.group(1).lower(), "googlechat")
+
+
 @router.post("/events/googlechat")
 async def receive_googlechat_event(request: Request):
     """No X-API-Key here either: Google's signed bearer token is the auth boundary — see
@@ -396,11 +434,21 @@ async def receive_googlechat_event(request: Request):
 
     body = await request.body()
     payload = json.loads(body)
-    project_id = _default_project_id()
 
     if payload.get("type") == "MESSAGE":
-        await run_in_threadpool(_log_googlechat_event, project_id, payload)
         message = payload.get("message", {})
+        text = message.get("text", "")
+        space_name = payload.get("space", {}).get("name")
+
+        if text and space_name:
+            connected_project_id = await run_in_threadpool(_try_consume_connect_code, text)
+            if connected_project_id is not None:
+                with get_conn() as conn:
+                    create_connection(conn, connected_project_id, "googlechat", space_name)
+                return {"text": "Connected this space to Project Brain."}
+
+        project_id = await run_in_threadpool(_resolve_googlechat_project_id, payload)
+        await run_in_threadpool(_log_googlechat_event, project_id, payload)
         if message.get("text"):
             entity_count = await run_in_threadpool(_process_googlechat_event, project_id, message)
             return {"status": "processed", "entities": entity_count}
