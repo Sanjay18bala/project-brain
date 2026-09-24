@@ -57,6 +57,34 @@ export async function fetchDashboard(projectId: string): Promise<DashboardRespon
   return res.json();
 }
 
+export type Project = { id: string; name: string; created_at: string };
+
+export async function fetchProjects(): Promise<Project[]> {
+  const res = await fetch(`${API_BASE}/projects`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.status}`);
+  const data = await res.json();
+  return data.projects;
+}
+
+export async function createProject(name: string): Promise<Project> {
+  const res = await fetch(`${API_BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`Failed to create project: ${res.status}`);
+  return res.json();
+}
+
+export async function getGithubInstallUrl(projectId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/connections/github/install?project_id=${projectId}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to get GitHub install URL: ${res.status}`);
+  const data = await res.json();
+  return data.install_url;
+}
+
 export type InvestigateResponse = { answer: string };
 
 export async function investigate(projectId: string, question: string): Promise<InvestigateResponse> {

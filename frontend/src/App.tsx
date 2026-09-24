@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AgentChat } from "./agent/AgentChat";
+import { createProject, fetchProjects, getGithubInstallUrl, type Project } from "./api/client";
 import { ConflictView } from "./conflicts/ConflictView";
 import { Dashboard } from "./dashboard/Dashboard";
 import { GraphView } from "./graph/GraphView";
@@ -19,6 +20,32 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState<string>(DEMO_PROJECT_ID);
+
+  useEffect(() => {
+    fetchProjects()
+      .then((fetched) => {
+        setProjects(fetched);
+        if (!projectId && fetched.length > 0) setProjectId(fetched[0].id);
+      })
+      .catch((err) => console.error(err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleNewProject() {
+    const name = window.prompt("Project name");
+    if (!name) return;
+    const project = await createProject(name);
+    setProjects((prev) => [project, ...prev]);
+    setProjectId(project.id);
+  }
+
+  async function handleConnectGithub() {
+    if (!projectId) return;
+    const url = await getGithubInstallUrl(projectId);
+    window.location.href = url;
+  }
 
   return (
     <div className="flex h-screen w-full flex-col">
@@ -33,13 +60,35 @@ export default function App() {
             {label}
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="border rounded px-2 py-1"
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            {projectId && !projects.some((p) => p.id === projectId) && (
+              <option value={projectId}>demo project</option>
+            )}
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button className="border rounded px-2 py-1" onClick={handleNewProject}>
+            New Project
+          </button>
+          <button className="border rounded px-2 py-1" onClick={handleConnectGithub} disabled={!projectId}>
+            Connect GitHub
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab === "dashboard" && <Dashboard projectId={DEMO_PROJECT_ID} />}
-        {tab === "graph" && <GraphView projectId={DEMO_PROJECT_ID} />}
-        {tab === "conflicts" && <ConflictView projectId={DEMO_PROJECT_ID} />}
-        {tab === "risks" && <RiskPanel projectId={DEMO_PROJECT_ID} />}
-        {tab === "agent" && <AgentChat projectId={DEMO_PROJECT_ID} />}
+        {tab === "dashboard" && <Dashboard projectId={projectId} />}
+        {tab === "graph" && <GraphView projectId={projectId} />}
+        {tab === "conflicts" && <ConflictView projectId={projectId} />}
+        {tab === "risks" && <RiskPanel projectId={projectId} />}
+        {tab === "agent" && <AgentChat projectId={projectId} />}
       </div>
     </div>
   );

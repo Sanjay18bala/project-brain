@@ -1,6 +1,8 @@
 # Project Brain — Roadmap v3: Multi-Tenant Self-Service Onboarding
 
-**Status**: planned, not yet built. Produced via `/plan` (ecc:plan), conversational mode.
+**Status**: DONE. All 6 tasks built, tested, and live-verified end to end — a PM can create a project in the
+UI, click Connect GitHub, install the real GitHub App, and have inbound webhook events route to their
+project via the `connections` table, with no engineer involved after initial deployment.
 
 **Decision history**: this plan originally used a GitHub App with OAuth-during-installation. It was then
 briefly simplified to a per-project webhook secret (no OAuth, PM pastes a URL+secret into GitHub's plain
@@ -128,7 +130,7 @@ No existing pattern for: project CRUD (only ever seeded via raw SQL), OAuth toke
 - **Validate**: once Task 3/4 are live, re-run something like `demo_events.py` but signed with the real
   app's webhook secret and carrying a real `installation.id`, confirming it lands in the right project.
 
-### Task 6: Frontend — project switcher + Connect button
+### Task 6: Frontend — project switcher + Connect button [DONE]
 - **Action**: replace the hardcoded `VITE_DEMO_PROJECT_ID` with a project list fetched from `GET
   /projects`, a switcher in the header, a "New Project" form, and a "Connect GitHub" button that hits
   `GET /connections/github/install?project_id=...`.
