@@ -93,7 +93,7 @@ No existing pattern for: project CRUD (only ever seeded via raw SQL), OAuth toke
   - Where can this be installed: Any account
 - I'll tell you exactly what to fill in, mirroring how we did the Nebius API key.
 
-### Task 4: Connect flow — install redirect + callback
+### Task 4: Connect flow — install redirect + callback [DONE — commit `dfcc5af`]
 - **Action**:
   - `GET /connections/github/install?project_id=<uuid>` → redirect to
     `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new?state=<project_id>` (confirmed via
@@ -114,11 +114,14 @@ No existing pattern for: project CRUD (only ever seeded via raw SQL), OAuth toke
   clear error), same limitation documented for `test_googlechat_ingestion.py`. Live verification needs an
   actual GitHub App and a real install click, done together once Task 3 is complete.
 
-### Task 5: Route incoming GitHub events by installation, not `DEFAULT_PROJECT_ID`
-- **Action**: in `_process_github_event`, after the (unchanged) HMAC verification, read
-  `payload["installation"]["id"]`, call `get_project_id_for_installation(conn, installation_id)`. If no
-  connection is found, return 200 with `{"status": "ignored"}` (an uninstalled/unknown installation should
-  not error loudly to GitHub, which would trigger webhook retries) rather than 404.
+### Task 5: Route incoming GitHub events by installation, not `DEFAULT_PROJECT_ID` [DONE — commit `dfcc5af`]
+- **Action**: in `receive_github_event`, after the (unchanged) HMAC verification, resolve `project_id` via
+  the new `_resolve_github_project_id` helper: reads `payload["installation"]["id"]`, calls
+  `get_project_id_for_installation`. If no connection is found, returns 200 with `{"status": "ignored"}`
+  (an uninstalled/unknown installation should not error loudly to GitHub, which would trigger webhook
+  retries) rather than 404. **`DEFAULT_PROJECT_ID`'s fate, decided**: kept as an explicit fallback — a
+  payload with no `installation` field at all (pre-App/legacy webhook shape) still routes to the demo
+  project rather than being dropped, so existing demo data stays intact.
 - **Mirror**: the existing `_default_project_id()` docstring already names this exact upgrade path (written
   back in Slice 1): *"map GitHub repo full_name / Slack team_id+channel to a project via a lookup table
   once multi-project support lands."* This task is that upgrade, for GitHub.
