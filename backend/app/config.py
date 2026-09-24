@@ -8,6 +8,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
 
+# GitHub App (roadmap-v3): OAuth-during-installation lets us verify who actually installed
+# the app before trusting an installation_id, which GitHub's own docs warn is otherwise
+# spoofable. See docs/roadmap-v3-onboarding.md.
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_APP_SLUG = os.getenv("GITHUB_APP_SLUG", "")
+
 # The public URL Google Chat sends requests to (e.g. https://your-domain.com/events/googlechat).
 # Used as the expected audience when verifying Google's signed bearer token — see
 # app/ingestion/googlechat.py. Not a shared secret like GITHUB_WEBHOOK_SECRET/

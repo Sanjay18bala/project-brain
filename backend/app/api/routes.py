@@ -20,6 +20,7 @@ from ..agents.risk import detect_risks
 from ..agents.staleness import find_stale_nodes
 from ..config import (
     DEFAULT_PROJECT_ID,
+    GITHUB_APP_SLUG,
     GITHUB_WEBHOOK_SECRET,
     RECENCY_HALF_LIFE_SECONDS,
     SLACK_SIGNING_SECRET,
@@ -29,12 +30,14 @@ from ..db import get_conn
 from ..graph.repository import (
     add_evidence,
     add_state_change,
+    create_connection,
     create_project,
     get_conflicted_nodes,
     get_evidence_for_project,
     get_graph,
     get_identity_links,
     get_node_last_activity,
+    get_project_id_for_installation,
     get_state_changes_for_node,
     has_action_been_taken,
     list_projects,
@@ -48,6 +51,7 @@ from ..graph.repository import (
     upsert_edge,
     upsert_node,
 )
+from ..integrations.github_app import exchange_code_for_token, user_owns_installation
 from ..ingestion.github import verify_github_signature
 from ..ingestion.googlechat import verify_google_chat_request
 from ..ingestion.slack import verify_slack_signature
@@ -230,6 +234,18 @@ def _process_slack_event(project_id: uuid.UUID, event: dict) -> int:
         )
 
 
+def _resolve_github_project_id(payload: dict) -> uuid.UUID | None:
+    """A GitHub App event always carries an `installation` object - use it to route to the
+    right project via the connections table (roadmap-v3 task 5). A payload with no
+    installation field at all (a legacy plain-repo webhook, not App-based) falls back to
+    the single demo project rather than being dropped."""
+    installation = payload.get("installation")
+    if installation and installation.get("id") is not None:
+        with get_conn() as conn:
+            return get_project_id_for_installation(conn, str(installation["id"]))
+    return _default_project_id()
+
+
 @router.post("/events/github")
 async def receive_github_event(request: Request):
     """No X-API-Key here: the GitHub HMAC signature is the auth boundary for this route —
@@ -239,12 +255,62 @@ async def receive_github_event(request: Request):
     if not verify_github_signature(body, signature, GITHUB_WEBHOOK_SECRET):
         raise HTTPException(status_code=401, detail="invalid signature")
 
-    project_id = _default_project_id()
     payload = json.loads(body)
+    project_id = await run_in_threadpool(_resolve_github_project_id, payload)
+    if project_id is None:
+        # A validly-signed event from an installation we don't have mapped to any project -
+        # acknowledge rather than error, so GitHub doesn't retry a request that will never
+        # resolve differently.
+        return {"status": "ignored"}
 
     await run_in_threadpool(_log_github_event, project_id, payload)
     entity_count = await run_in_threadpool(_process_github_event, project_id, payload)
     return {"status": "processed", "entities": entity_count}
+
+
+@router.get("/connections/github/install", dependencies=[Depends(require_api_key)])
+def github_install_url(project_id: uuid.UUID):
+    """Returns the GitHub App install URL rather than redirecting directly — a plain
+    browser redirect can't carry X-API-Key, so the frontend fetches this (authenticated),
+    then navigates the browser to the URL it gets back."""
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+    return {"install_url": f"https://github.com/apps/{GITHUB_APP_SLUG}/installations/new?state={project_id}"}
+
+
+@router.get("/connections/github/callback")
+def github_install_callback(installation_id: str, code: str, state: str):
+    """No X-API-Key here — this is GitHub redirecting the PM's own browser back to us, not
+    an authenticated API call. `state` is the project_id we set in the install URL above;
+    GitHub preserves it through this specific flow (confirmed via GitHub's own docs).
+
+    installation_id alone is not proof of ownership (GitHub's own docs warn it can be
+    spoofed/guessed) — the code->token exchange plus checking that this installation is
+    actually in the authenticated user's own installations list is what closes that gap.
+    """
+    try:
+        project_id = uuid.UUID(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="malformed state") from None
+
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+
+    try:
+        user_token = exchange_code_for_token(code)
+    except Exception:
+        logger.warning("GitHub OAuth token exchange failed", exc_info=True)
+        raise HTTPException(status_code=502, detail="could not verify GitHub authorization") from None
+
+    if not user_owns_installation(user_token, installation_id):
+        raise HTTPException(status_code=403, detail="this installation does not belong to the authenticated user")
+
+    with get_conn() as conn:
+        create_connection(conn, project_id, "github", installation_id)
+
+    return {"status": "connected", "project_id": str(project_id)}
 
 
 @router.post("/events/slack")
