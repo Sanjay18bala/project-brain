@@ -36,6 +36,42 @@ GitHub, Slack, and Google Chat all need a public HTTPS URL to deliver events to 
 not `API_KEY` — none of them can attach custom headers to their deliveries. `API_KEY` only guards the
 first-party `GET`/`POST` routes the frontend and agent chat call.
 
+### GitHub setup
+
+GitHub connects via a real [GitHub App](https://github.com/settings/apps/new) with "Request user
+authorization (OAuth) during installation" enabled, not a plain per-repo webhook:
+
+1. Create the App: Webhook URL → your public `POST /events/github`; Webhook secret → the same
+   `GITHUB_WEBHOOK_SECRET` in `.env`; permissions → Issues (Read), Pull requests (Read); subscribe to
+   Issues + Pull request events; **check "Request user authorization (OAuth) during installation"** — this
+   is what makes the install callback include a `code`, which is what proves the installer actually owns
+   it (a bare `installation_id` alone is spoofable, per GitHub's own docs).
+2. Set the Callback URL to your public `GET /connections/github/callback`.
+3. Copy the Client ID/Client secret into `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, and the app's slug
+   (from its settings URL) into `GITHUB_APP_SLUG`.
+4. In the UI, select a project and click **Connect GitHub** — it fetches the install URL from
+   `GET /connections/github/install`, redirects to GitHub's install screen, and GitHub's callback binds
+   the chosen installation to that project. Installations with no connection are ignored (not routed to the
+   demo project), so an uninstalled/unmapped installation's events never bleed into someone else's data.
+
+### Slack setup
+
+Slack connects via a standard "Add to Slack" OAuth flow:
+
+1. Create an app at [api.slack.com/apps](https://api.slack.com/apps). Under **OAuth & Permissions**, add
+   Bot Token Scopes: `chat:write`, `im:write`, `channels:history`, `groups:history`, `im:history`,
+   `mpim:history` — and add a Redirect URL matching your public `GET /connections/slack/callback` exactly.
+2. Under **Event Subscriptions**, enable events, set the Request URL to your public `POST /events/slack`
+   (Slack's `url_verification` handshake must succeed here), and subscribe to bot events: `message.channels`,
+   `message.groups`, `message.im`, `message.mpim`.
+3. Copy the Client ID/Client secret from **Basic Information** into `SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`,
+   and the exact redirect URL into `SLACK_REDIRECT_URI`.
+4. In the UI, select a project and click **Connect Slack** — same OAuth-redirect pattern as GitHub. Unlike
+   GitHub's installation_id, Slack's `code`→token exchange response directly returns the authorizing
+   team's id, so no separate ownership check is needed (the code can only be redeemed for the team that
+   completed Slack's consent screen). Teams with no connection are ignored the same way unmapped GitHub
+   installations are.
+
 ### Google Chat setup
 
 Unlike GitHub (HMAC) and Slack (`v0=` signing), Google Chat verifies with a Google-signed OIDC bearer

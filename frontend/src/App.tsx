@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { AgentChat } from "./agent/AgentChat";
-import { createProject, fetchProjects, getGithubInstallUrl, getGoogleChatConnectCode, type Project } from "./api/client";
+import {
+  createProject,
+  fetchProjects,
+  getGithubInstallUrl,
+  getGoogleChatConnectCode,
+  getSlackInstallUrl,
+  type Project,
+} from "./api/client";
 import { ConflictView } from "./conflicts/ConflictView";
 import { Dashboard } from "./dashboard/Dashboard";
 import { GraphView } from "./graph/GraphView";
@@ -47,6 +54,12 @@ export default function App() {
     window.location.href = url;
   }
 
+  async function handleConnectSlack() {
+    if (!projectId) return;
+    const url = await getSlackInstallUrl(projectId);
+    window.location.href = url;
+  }
+
   async function handleConnectGoogleChat() {
     if (!projectId) return;
     const code = await getGoogleChatConnectCode(projectId);
@@ -88,6 +101,9 @@ export default function App() {
           </button>
           <button className="border rounded px-2 py-1" onClick={handleConnectGithub} disabled={!projectId}>
             Connect GitHub
+          </button>
+          <button className="border rounded px-2 py-1" onClick={handleConnectSlack} disabled={!projectId}>
+            Connect Slack
           </button>
           <button className="border rounded px-2 py-1" onClick={handleConnectGoogleChat} disabled={!projectId}>
             Connect Google Chat

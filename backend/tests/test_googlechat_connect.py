@@ -100,12 +100,12 @@ def test_resolve_googlechat_project_id_uses_connection_mapping(monkeypatch):
     assert result == mapped_project
 
 
-def test_resolve_googlechat_project_id_falls_back_to_default_when_unmapped(monkeypatch):
+def test_resolve_googlechat_project_id_is_ignored_when_space_unmapped(monkeypatch):
     monkeypatch.setattr(routes, "get_conn", _fake_conn)
     monkeypatch.setattr(routes, "get_project_id_for_installation", lambda conn, external_id, platform: None)
 
     result = routes._resolve_googlechat_project_id({"space": {"name": "spaces/UNMAPPED"}})
-    assert result == uuid.UUID("00000000-0000-0000-0000-000000000001")
+    assert result is None
 
 
 def test_resolve_googlechat_project_id_falls_back_to_default_when_no_space():

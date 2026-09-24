@@ -42,6 +42,15 @@ STALENESS_SWEEP_INTERVAL_SECONDS = float(os.getenv("STALENESS_SWEEP_INTERVAL_SEC
 # Bot token for outbound Slack messages (chat:write + im:write scopes). Distinct from
 # SLACK_SIGNING_SECRET, which only verifies inbound webhook requests.
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
+
+# Slack OAuth ("Add to Slack") for the self-service connect flow (same pattern as the
+# GitHub App - see docs/roadmap-v3-onboarding.md). Unlike GitHub's installation_id, Slack's
+# code->token exchange response directly returns the authorizing team's id, so no separate
+# ownership check is needed - the code itself can only be redeemed for the team that
+# actually completed the OAuth consent screen.
+SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "")
+SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET", "")
+SLACK_REDIRECT_URI = os.getenv("SLACK_REDIRECT_URI", "")
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")

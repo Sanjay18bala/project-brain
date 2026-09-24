@@ -24,6 +24,8 @@ from ..config import (
     GITHUB_APP_SLUG,
     GITHUB_WEBHOOK_SECRET,
     RECENCY_HALF_LIFE_SECONDS,
+    SLACK_CLIENT_ID,
+    SLACK_REDIRECT_URI,
     SLACK_SIGNING_SECRET,
     STALENESS_THRESHOLD_DAYS,
 )
@@ -55,6 +57,7 @@ from ..graph.repository import (
     upsert_node,
 )
 from ..integrations.github_app import exchange_code_for_token, user_owns_installation
+from ..integrations.slack_oauth import exchange_code_for_team_id
 from ..ingestion.github import verify_github_signature
 from ..ingestion.googlechat import verify_google_chat_request
 from ..ingestion.slack import verify_slack_signature
@@ -316,6 +319,62 @@ def github_install_callback(installation_id: str, code: str, state: str):
     return {"status": "connected", "project_id": str(project_id)}
 
 
+SLACK_BOT_SCOPES = "chat:write,im:write,channels:history,groups:history,im:history,mpim:history"
+
+
+@router.get("/connections/slack/install", dependencies=[Depends(require_api_key)])
+def slack_install_url(project_id: uuid.UUID):
+    """Returns Slack's OAuth authorize URL rather than redirecting directly — same reason
+    as GitHub's install route: a plain browser redirect can't carry X-API-Key."""
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+    return {
+        "install_url": (
+            "https://slack.com/oauth/v2/authorize"
+            f"?client_id={SLACK_CLIENT_ID}&scope={SLACK_BOT_SCOPES}"
+            f"&redirect_uri={SLACK_REDIRECT_URI}&state={project_id}"
+        )
+    }
+
+
+@router.get("/connections/slack/callback")
+def slack_install_callback(code: str, state: str):
+    """No X-API-Key here — Slack redirects the PM's own browser back to us. `state` is the
+    project_id we set in the install URL above."""
+    try:
+        project_id = uuid.UUID(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="malformed state") from None
+
+    with get_conn() as conn:
+        if not project_exists(conn, project_id):
+            raise HTTPException(status_code=404, detail="unknown project")
+
+    try:
+        team_id = exchange_code_for_team_id(code, SLACK_REDIRECT_URI)
+    except Exception:
+        logger.warning("Slack OAuth token exchange failed", exc_info=True)
+        raise HTTPException(status_code=502, detail="could not verify Slack authorization") from None
+
+    with get_conn() as conn:
+        create_connection(conn, project_id, "slack", team_id)
+
+    return {"status": "connected", "project_id": str(project_id)}
+
+
+def _resolve_slack_project_id(payload: dict) -> uuid.UUID | None:
+    """A Slack event always carries the authorizing team_id - use it to route to the right
+    project via the connections table, same pattern as GitHub's installation.id (roadmap-v3
+    task 5). A team_id with no connection mapped is ignored rather than defaulted, so an
+    unconnected workspace's traffic never bleeds into the demo project."""
+    team_id = payload.get("team_id")
+    if not team_id:
+        return _default_project_id()
+    with get_conn() as conn:
+        return get_project_id_for_installation(conn, team_id, platform="slack")
+
+
 @router.post("/events/slack")
 async def receive_slack_event(request: Request):
     """No X-API-Key here either: the Slack request signature is the auth boundary, and
@@ -336,7 +395,9 @@ async def receive_slack_event(request: Request):
         return {"challenge": payload.get("challenge")}
 
     event = payload.get("event", {})
-    project_id = _default_project_id()
+    project_id = await run_in_threadpool(_resolve_slack_project_id, payload)
+    if project_id is None:
+        return {"status": "ignored"}
 
     if event.get("type") == "message":
         # Logged before the subtype/bot/text filter below, so the full human-message
@@ -404,14 +465,14 @@ def _resolve_googlechat_project_id(payload: dict) -> uuid.UUID | None:
     """A Google Chat event always carries the space it happened in - use it to route to
     the right project via the connections table, same pattern as GitHub's installation.id
     (roadmap-v3 task 5). A payload with no space at all falls back to the single demo
-    project rather than being dropped."""
+    project (legacy/malformed event); a space present but not connected to any project is
+    ignored rather than defaulted, so an unconnected space's traffic never bleeds into the
+    demo project."""
     space_name = payload.get("space", {}).get("name")
-    if space_name:
-        with get_conn() as conn:
-            resolved = get_project_id_for_installation(conn, space_name, platform="googlechat")
-        if resolved:
-            return resolved
-    return _default_project_id()
+    if not space_name:
+        return _default_project_id()
+    with get_conn() as conn:
+        return get_project_id_for_installation(conn, space_name, platform="googlechat")
 
 
 def _try_consume_connect_code(text: str) -> uuid.UUID | None:
@@ -448,6 +509,8 @@ async def receive_googlechat_event(request: Request):
                 return {"text": "Connected this space to Project Brain."}
 
         project_id = await run_in_threadpool(_resolve_googlechat_project_id, payload)
+        if project_id is None:
+            return {}
         await run_in_threadpool(_log_googlechat_event, project_id, payload)
         if message.get("text"):
             entity_count = await run_in_threadpool(_process_googlechat_event, project_id, message)

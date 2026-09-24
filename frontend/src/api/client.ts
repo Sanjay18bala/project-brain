@@ -85,6 +85,15 @@ export async function getGithubInstallUrl(projectId: string): Promise<string> {
   return data.install_url;
 }
 
+export async function getSlackInstallUrl(projectId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/connections/slack/install?project_id=${projectId}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to get Slack install URL: ${res.status}`);
+  const data = await res.json();
+  return data.install_url;
+}
+
 export async function getGoogleChatConnectCode(projectId: string): Promise<string> {
   const res = await fetch(`${API_BASE}/connections/googlechat/code?project_id=${projectId}`, {
     method: "POST",
