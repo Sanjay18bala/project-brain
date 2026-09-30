@@ -14,6 +14,7 @@ os.environ.setdefault("DEFAULT_PROJECT_ID", "00000000-0000-0000-0000-00000000000
 
 from contextlib import contextmanager
 
+from psycopg.errors import UniqueViolation  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.api import routes  # noqa: E402
@@ -78,6 +79,23 @@ def test_callback_creates_connection_on_success(monkeypatch):
         "platform": "slack",
         "external_id": "T12345",
     }
+
+
+def test_callback_returns_409_when_workspace_already_connected_elsewhere(monkeypatch):
+    monkeypatch.setattr(routes, "get_conn", _fake_conn)
+    monkeypatch.setattr(routes, "project_exists", lambda conn, project_id: True)
+    monkeypatch.setattr(routes, "exchange_code_for_team_id", lambda code, redirect_uri: "T12345")
+
+    def fake_create_connection(conn, project_id, platform, external_id):
+        raise UniqueViolation("duplicate key value violates unique constraint")
+
+    monkeypatch.setattr(routes, "create_connection", fake_create_connection)
+
+    response = client.get(
+        "/connections/slack/callback",
+        params={"code": "good-code", "state": "00000000-0000-0000-0000-000000000001"},
+    )
+    assert response.status_code == 409
 
 
 def test_resolve_slack_project_id_uses_connection_mapping(monkeypatch):

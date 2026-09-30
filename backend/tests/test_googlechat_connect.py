@@ -15,6 +15,7 @@ os.environ.setdefault("DEFAULT_PROJECT_ID", "00000000-0000-0000-0000-00000000000
 
 from contextlib import contextmanager
 
+from psycopg.errors import UniqueViolation  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.api import routes  # noqa: E402
@@ -59,6 +60,29 @@ def test_connect_code_returns_generated_code(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json() == {"code": "deadbeef"}
+
+
+def test_webhook_reports_conflict_when_space_already_connected_elsewhere(monkeypatch):
+    monkeypatch.setattr(routes, "verify_google_chat_request", lambda token: True)
+    monkeypatch.setattr(routes, "get_conn", _fake_conn)
+    monkeypatch.setattr(routes, "_try_consume_connect_code", lambda text: uuid.UUID("00000000-0000-0000-0000-000000000002"))
+
+    def fake_create_connection(conn, project_id, platform, external_id):
+        raise UniqueViolation("duplicate key value violates unique constraint")
+
+    monkeypatch.setattr(routes, "create_connection", fake_create_connection)
+
+    response = client.post(
+        "/events/googlechat",
+        json={
+            "type": "MESSAGE",
+            "space": {"name": "spaces/AAA"},
+            "message": {"text": "connect deadbeef"},
+        },
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"text": "This space is already connected to a different project."}
 
 
 def test_try_consume_connect_code_matches_and_lowercases(monkeypatch):

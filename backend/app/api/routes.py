@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -313,8 +314,13 @@ def github_install_callback(installation_id: str, code: str, state: str):
     if not user_owns_installation(user_token, installation_id):
         raise HTTPException(status_code=403, detail="this installation does not belong to the authenticated user")
 
-    with get_conn() as conn:
-        create_connection(conn, project_id, "github", installation_id)
+    try:
+        with get_conn() as conn:
+            create_connection(conn, project_id, "github", installation_id)
+    except UniqueViolation:
+        raise HTTPException(
+            status_code=409, detail="this GitHub installation is already connected to a different project"
+        ) from None
 
     return {"status": "connected", "project_id": str(project_id)}
 
@@ -357,8 +363,13 @@ def slack_install_callback(code: str, state: str):
         logger.warning("Slack OAuth token exchange failed", exc_info=True)
         raise HTTPException(status_code=502, detail="could not verify Slack authorization") from None
 
-    with get_conn() as conn:
-        create_connection(conn, project_id, "slack", team_id)
+    try:
+        with get_conn() as conn:
+            create_connection(conn, project_id, "slack", team_id)
+    except UniqueViolation:
+        raise HTTPException(
+            status_code=409, detail="this Slack workspace is already connected to a different project"
+        ) from None
 
     return {"status": "connected", "project_id": str(project_id)}
 
@@ -504,8 +515,11 @@ async def receive_googlechat_event(request: Request):
         if text and space_name:
             connected_project_id = await run_in_threadpool(_try_consume_connect_code, text)
             if connected_project_id is not None:
-                with get_conn() as conn:
-                    create_connection(conn, connected_project_id, "googlechat", space_name)
+                try:
+                    with get_conn() as conn:
+                        create_connection(conn, connected_project_id, "googlechat", space_name)
+                except UniqueViolation:
+                    return {"text": "This space is already connected to a different project."}
                 return {"text": "Connected this space to Project Brain."}
 
         project_id = await run_in_threadpool(_resolve_googlechat_project_id, payload)
