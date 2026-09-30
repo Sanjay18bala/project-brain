@@ -104,7 +104,8 @@ export async function getGoogleChatConnectCode(projectId: string): Promise<strin
   return data.code;
 }
 
-export type InvestigateResponse = { answer: string };
+export type Source = { node_name: string; source_type: string; occurred_at: string; url: string | null };
+export type InvestigateResponse = { answer: string; sources: Source[] };
 
 export async function investigate(projectId: string, question: string): Promise<InvestigateResponse> {
   const res = await fetch(`${API_BASE}/agent/investigate`, {

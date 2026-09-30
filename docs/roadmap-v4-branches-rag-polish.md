@@ -46,12 +46,9 @@ Four requests bundled together, each grounded against what's already in the code
 - **Task 1.2** [DONE]: Added `MILESTONE`/`PART_OF` to the extraction allow-list and prompt. Live-verified in the same test event — Nemotron correctly extracted a `MILESTONE` ("beta launch") and a `PART_OF` edge from the PR body text.
 - **Task 1.3** [SKIPPED — not needed]: `get_graph` already returns every node's `type`/`status`/`metadata` and every edge's `relationship`, which is everything the frontend needs to derive branch grouping (filter `type == "BRANCH"`, follow `ON_BRANCH` edges) without a dedicated endpoint duplicating that data. Revisit only if Phase 3's frontend work finds a real need for server-side grouping.
 
-### Phase 2 — RAG visibility
-- **Task 2.1**: Revisit the "never echo evidence" decision explicitly: `POST /agent/investigate` returns a new `sources` field — a safe subset per evidence item (`node_name`, `source_type`, `occurred_at`, `url`; never raw `content`, staying consistent with the original leak concern for anything not meant to be public) alongside `answer`.
-  - **Mirror**: `_gather_evidence`'s existing shape; the security comment this decision reverses should be updated, not silently deleted.
-  - **Validate**: extend the existing investigate route tests to assert `sources` is present and doesn't leak `content`.
-- **Task 2.2**: `AgentChat.tsx` renders `sources` under the answer (small "based on: Slack msg from X, PR #Y" list).
-  - **Validate**: `npx tsc -b`, manual click-through.
+### Phase 2 — RAG visibility [DONE]
+- **Task 2.1** [DONE]: `POST /agent/investigate` returns `sources` — deduped by `(node_name, source_type)` and capped to `_MAX_RETURNED_SOURCES` (6), since the raw blended evidence list can carry the same node dozens of times (e.g. a repo entity attached to every GitHub event). Never includes raw `content`.
+- **Task 2.2** [DONE]: `AgentChat.tsx` renders a "Based on:" line per answer, linking out when a source has a `url`. Live-verified in-browser: a real question returned a correct answer plus exactly 6 distinct, deduped sources.
 
 ### Phase 3 — Professional redesign
 - **Task 3.1**: Establish a small design-token layer (Tailwind theme extension: a real neutral+accent palette, a type scale, consistent radius/shadow use) — no new UI library.

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { investigate } from "../api/client";
+import { investigate, type Source } from "../api/client";
 
-type Message = { role: "user" | "assistant"; text: string };
+type Message = { role: "user" | "assistant"; text: string; sources?: Source[] };
 
 export function AgentChat({ projectId }: { projectId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -17,8 +17,8 @@ export function AgentChat({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const { answer } = await investigate(projectId, question);
-      setMessages((prev) => [...prev, { role: "assistant", text: answer }]);
+      const { answer, sources } = await investigate(projectId, question);
+      setMessages((prev) => [...prev, { role: "assistant", text: answer, sources }]);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -45,6 +45,24 @@ export function AgentChat({ projectId }: { projectId: string }) {
             >
               {m.text}
             </span>
+            {m.sources && m.sources.length > 0 && (
+              <div className="mt-1 text-left text-xs text-gray-500">
+                Based on:{" "}
+                {m.sources.map((s, si) => (
+                  <span key={si}>
+                    {si > 0 && ", "}
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+                        {s.node_name}
+                      </a>
+                    ) : (
+                      <span>{s.node_name}</span>
+                    )}{" "}
+                    ({s.source_type})
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {loading && <div className="text-sm text-gray-400">Thinking…</div>}

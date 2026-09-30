@@ -703,10 +703,35 @@ def agent_investigate(payload: InvestigateRequest):
             "evidence_truncated": evidence_truncated,
         }
 
-    # Only the answer is returned — context (including raw evidence.content/url) is never
-    # echoed back; it exists only to ground the LLM call, not as an API response payload.
+    # `answer` plus a deliberately narrow `sources` view are returned — raw evidence.content
+    # stays server-side (that's still the leak this route is careful about); node_name/
+    # source_type/occurred_at/url are the minimum a citations UI needs and were already
+    # readable via other authenticated routes on this project, so surfacing them here isn't
+    # a new exposure (roadmap-v4 Phase 2, revisiting the prior "never echo evidence" call
+    # now that there's an actual frontend consumer for it).
     answer = answer_question(payload.question, context)
-    return {"answer": answer}
+    sources = _dedupe_sources(evidence)
+    return {"answer": answer, "sources": sources}
+
+
+_MAX_RETURNED_SOURCES = 6
+
+
+def _dedupe_sources(evidence: list[dict]) -> list[dict]:
+    """The blended semantic+recency evidence list can carry the same node many times over
+    (e.g. a repository entity attached to every GitHub event) - a citations UI needs a
+    short, distinct list, not the full retrieval set."""
+    seen: set[tuple[str, str]] = set()
+    sources = []
+    for e in evidence:
+        key = (e["node_name"], e["source_type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append({"node_name": e["node_name"], "source_type": e["source_type"], "occurred_at": e["occurred_at"], "url": e["url"]})
+        if len(sources) >= _MAX_RETURNED_SOURCES:
+            break
+    return sources
 
 
 def run_staleness_sweep(conn, project_id: uuid.UUID) -> list[uuid.UUID]:
