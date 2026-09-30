@@ -98,6 +98,16 @@ def upsert_node(conn, project_id, type_, name, status="KNOWN", metadata=None):
     return cur.fetchone()[0]
 
 
+def find_node_id_by_name(conn, project_id, name):
+    """Looks up an existing node without creating one - used by deterministic (non-LLM)
+    writes like branch linking that should only connect to a node extraction has already
+    created, never race-overwrite its type/status (roadmap-v4 Phase 1)."""
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM nodes WHERE project_id = %s AND name = %s", (project_id, name))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
 def upsert_edge(conn, project_id, source_id, target_id, relationship, confidence=1.0):
     cur = conn.cursor()
     cur.execute(

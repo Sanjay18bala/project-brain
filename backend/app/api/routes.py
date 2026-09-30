@@ -38,6 +38,7 @@ from ..graph.repository import (
     create_connect_code,
     create_connection,
     create_project,
+    find_node_id_by_name,
     get_conflicted_nodes,
     get_evidence_for_project,
     get_graph,
@@ -178,6 +179,36 @@ def _log_github_event(project_id: uuid.UUID, payload: dict) -> None:
         log_event(conn, project_id, "github", _classify_github_event_type(payload), payload, datetime.now(timezone.utc))
 
 
+def _upsert_pr_branches(conn, project_id: uuid.UUID, payload: dict) -> None:
+    """Deterministic (non-LLM) branch tracking: a pull_request payload already carries
+    head.ref/base.ref and the repo's actual default_branch structurally, so no extraction
+    call is needed - same trust level as the rest of the webhook body (roadmap-v4 Phase 1).
+
+    Only links to a PULL_REQUEST node if extraction has already created one by that exact
+    title - never creates/overwrites the PR node itself here, to avoid racing the
+    claim-reconciliation status logic in _write_extraction_to_graph (that's the actual
+    trust boundary for PR status; this function only ever touches BRANCH nodes/edges)."""
+    pr = payload.get("pull_request")
+    if not pr:
+        return
+
+    default_branch = payload.get("repository", {}).get("default_branch")
+    head_ref = pr.get("head", {}).get("ref")
+    base_ref = pr.get("base", {}).get("ref")
+
+    head_id = None
+    if head_ref:
+        head_id = upsert_node(conn, project_id, "BRANCH", head_ref, metadata={"is_default": head_ref == default_branch})
+    if base_ref:
+        upsert_node(conn, project_id, "BRANCH", base_ref, metadata={"is_default": base_ref == default_branch})
+
+    title = pr.get("title")
+    if title and head_id:
+        pr_node_id = find_node_id_by_name(conn, project_id, title)
+        if pr_node_id:
+            upsert_edge(conn, project_id, pr_node_id, head_id, "ON_BRANCH")
+
+
 def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
     """Runs the extraction + DB writes off the event loop (blocking psycopg/openai calls)."""
     extraction = extract(json.dumps(payload))
@@ -190,7 +221,7 @@ def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
     with get_conn() as conn:
         if not project_exists(conn, project_id):
             raise HTTPException(status_code=404, detail="unknown project")
-        return _write_extraction_to_graph(
+        entity_count = _write_extraction_to_graph(
             conn,
             project_id,
             extraction,
@@ -201,6 +232,8 @@ def _process_github_event(project_id: uuid.UUID, payload: dict) -> int:
             occurred_at=datetime.now(timezone.utc),
             author=author[:128] if author else None,
         )
+        _upsert_pr_branches(conn, project_id, payload)
+        return entity_count
 
 
 def _slack_ts_to_datetime(ts: str | None) -> datetime:

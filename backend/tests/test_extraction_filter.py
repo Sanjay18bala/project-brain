@@ -55,6 +55,16 @@ def test_keeps_valid_state_change():
     assert _filter_extraction(raw)["state_changes"] == [{"entity": "OCR", "new_state": "MERGED", "confidence": 0.9}]
 
 
+def test_keeps_milestone_entity_and_part_of_relationship():
+    raw = {
+        "entities": [{"type": "TASK", "name": "OCR"}, {"type": "MILESTONE", "name": "Beta launch"}],
+        "relationships": [{"source": "OCR", "relation": "PART_OF", "target": "Beta launch"}],
+    }
+    filtered = _filter_extraction(raw)
+    assert {"type": "MILESTONE", "name": "Beta launch"} in filtered["entities"]
+    assert filtered["relationships"] == [{"source": "OCR", "relation": "PART_OF", "target": "Beta launch"}]
+
+
 def test_entity_list_is_capped_to_bound_graph_growth():
     raw = {"entities": [{"type": "TASK", "name": f"task-{i}"} for i in range(MAX_EXTRACTION_ITEMS + 20)]}
     assert len(_filter_extraction(raw)["entities"]) <= MAX_EXTRACTION_ITEMS

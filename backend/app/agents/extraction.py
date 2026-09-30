@@ -8,16 +8,16 @@ from ..config import NEBIUS_API_KEY, NEBIUS_BASE_URL, NEMOTRON_MODEL
 
 _client = OpenAI(api_key=NEBIUS_API_KEY, base_url=NEBIUS_BASE_URL, timeout=30.0)
 
-ALLOWED_NODE_TYPES = {"TASK", "PERSON", "ISSUE", "PULL_REQUEST", "REPOSITORY", "DEADLINE"}
-ALLOWED_RELATIONSHIPS = {"ASSIGNED_TO", "CREATED_BY", "RELATED_TO", "BLOCKS", "DEPENDS_ON", "DUE_BEFORE"}
+ALLOWED_NODE_TYPES = {"TASK", "PERSON", "ISSUE", "PULL_REQUEST", "REPOSITORY", "DEADLINE", "MILESTONE"}
+ALLOWED_RELATIONSHIPS = {"ASSIGNED_TO", "CREATED_BY", "RELATED_TO", "BLOCKS", "DEPENDS_ON", "DUE_BEFORE", "PART_OF"}
 MAX_STATE_LABEL_LENGTH = 64
 MAX_EXTRACTION_ITEMS = 50  # caps unbounded graph growth from a single crafted webhook payload
 EMPTY_EXTRACTION = {"entities": [], "relationships": [], "state_changes": []}
 
 EXTRACTION_PROMPT = """Extract project entities, relationships, and state changes from this project \
 activity (a GitHub event payload or a Slack message) as JSON matching:
-{{"entities": [{{"type": "TASK|PERSON|ISSUE|PULL_REQUEST|REPOSITORY|DEADLINE", "name": "..."}}], \
-"relationships": [{{"source": "...", "relation": "ASSIGNED_TO|CREATED_BY|RELATED_TO|BLOCKS|DEPENDS_ON|DUE_BEFORE", "target": "..."}}], \
+{{"entities": [{{"type": "TASK|PERSON|ISSUE|PULL_REQUEST|REPOSITORY|DEADLINE|MILESTONE", "name": "..."}}], \
+"relationships": [{{"source": "...", "relation": "ASSIGNED_TO|CREATED_BY|RELATED_TO|BLOCKS|DEPENDS_ON|DUE_BEFORE|PART_OF", "target": "..."}}], \
 "state_changes": [{{"entity": "...", "new_state": "a short status label like MERGED, IN_PROGRESS, BLOCKED, DONE", \
 "confidence": 0.0}}]}}
 Use BLOCKS when the text says one thing can't proceed until another is done — e.g. "Frontend can't \
@@ -28,6 +28,9 @@ MUST be that date in YYYY-MM-DD format (resolve relative dates like "next Friday
 timestamp if present), never a vague phrase like "soon". Connect the task to it with DUE_BEFORE: \
 {{"source": "<task>", "relation": "DUE_BEFORE", "target": "<YYYY-MM-DD>"}}. If no specific date is stated, \
 do not emit a DEADLINE at all.
+Use MILESTONE only when the text names a named project checkpoint or release (e.g. "Beta launch", \
+"v1.0 release") — never a vague phrase like "soon" or a plain task. Connect a task to the milestone it \
+contributes to with PART_OF: {{"source": "<task>", "relation": "PART_OF", "target": "<milestone>"}}.
 For a GitHub issue or pull request, name the entity using its title (a stable, human-readable name that \
 will match how it's referred to elsewhere, e.g. in a Slack message) — never just its number, which isn't a \
 stable identifier across different mentions of the same thing.
