@@ -5,7 +5,7 @@ function authHeaders(): HeadersInit {
   return API_KEY ? { "X-API-Key": API_KEY } : {};
 }
 
-export type GraphNode = { id: string; type: string; name: string; status: string };
+export type GraphNode = { id: string; type: string; name: string; status: string; metadata?: Record<string, unknown> };
 export type GraphEdge = { id: string; source: string; target: string; relationship: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 

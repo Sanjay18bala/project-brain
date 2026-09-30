@@ -50,11 +50,11 @@ Four requests bundled together, each grounded against what's already in the code
 - **Task 2.1** [DONE]: `POST /agent/investigate` returns `sources` — deduped by `(node_name, source_type)` and capped to `_MAX_RETURNED_SOURCES` (6), since the raw blended evidence list can carry the same node dozens of times (e.g. a repo entity attached to every GitHub event). Never includes raw `content`.
 - **Task 2.2** [DONE]: `AgentChat.tsx` renders a "Based on:" line per answer, linking out when a source has a `url`. Live-verified in-browser: a real question returned a correct answer plus exactly 6 distinct, deduped sources.
 
-### Phase 3 — Professional redesign
-- **Task 3.1**: Establish a small design-token layer (Tailwind theme extension: a real neutral+accent palette, a type scale, consistent radius/shadow use) — no new UI library.
-- **Task 3.2**: Rewrite `GraphView.tsx` as branch swimlanes: one row/column per branch (main visually distinct), nodes grouped under their branch, deadlines/milestones called out with status color.
-- **Task 3.3**: Restyle `Dashboard.tsx` on the new tokens; add a "branches at risk" summary if Phase 1 produced per-branch risk data.
-  - **Validate**: `npx tsc -b`, visual check via chrome-devtools screenshot against both themes if dark mode is in scope (confirm with user — not assumed here).
+### Phase 3 — Professional redesign [DONE]
+- **Task 3.1** [DONE]: Design tokens added to `tailwind.config.js` (Inter/JetBrains Mono via Google Fonts, `ink`/`muted`/`surface`/`panel`/`border`/`accent`/`status.*` color tokens, `shadow-card`/`rounded-card`) plus shared `.card`/`.badge-*`/`.btn-primary`/`.btn-secondary` component classes in `index.css`. New `frontend/src/lib/nodeStatus.ts` mirrors the backend's exact `active`/`blocked`/`conflicted`/`unknown` classification so colors stay consistent everywhere.
+- **Task 3.2** [DONE]: `GraphView.tsx` rewritten as branch swimlanes — one column per `BRANCH` node (main first, visually distinct with an accent border), a PR's connected nodes pulled into its branch's column via `ON_BRANCH` + one more hop of direct neighbors, everything else bucketed into an "Unassigned" column. Live-verified: the demo project correctly rendered `main`, the `refactor-ocr-pipeline` branch (with its PR, author, and linked milestone), and older pre-branch-tracking demo entities under Unassigned.
+- **Task 3.3** [DONE]: `Dashboard.tsx` restyled on the new tokens (colored left-border stat cards, `.card` sections, badge chips). "Branches at risk" summary skipped — `DashboardResponse` doesn't carry per-branch data and Task 1.3 (a dedicated branches endpoint) was deliberately skipped as unnecessary; revisit only if a real need shows up.
+- **Extra (not originally listed, done for visual cohesion)**: `App.tsx`'s header/nav, `ConflictView.tsx`, `RiskPanel.tsx`, and `AgentChat.tsx`'s remaining hardcoded colors also moved onto the same tokens, so the whole app reads as one consistent design instead of two polished tabs next to three unstyled ones.
 
 ### Phase 4 — Demo data (sequenced last, per "later on")
 - **Task 4.1**: `backend/app/outbound/slack.py` gets a `post_message(channel_id, text)` function (mirrors `send_dm`, posts to a channel instead of opening a DM).

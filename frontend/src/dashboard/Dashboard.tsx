@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardResponse } from "../api/client";
 
-const STAT_CARDS: { key: keyof DashboardResponse["counts"]; label: string; color: string }[] = [
-  { key: "active", label: "Active", color: "bg-green-100 text-green-800" },
-  { key: "blocked", label: "Blocked", color: "bg-amber-100 text-amber-800" },
-  { key: "conflicted", label: "Conflicted", color: "bg-red-100 text-red-800" },
-  { key: "unknown", label: "Unknown", color: "bg-gray-100 text-gray-800" },
+const STAT_CARDS: { key: keyof DashboardResponse["counts"]; label: string; border: string; text: string }[] = [
+  { key: "active", label: "Active", border: "border-l-status-active", text: "text-status-active" },
+  { key: "blocked", label: "Blocked", border: "border-l-status-blocked", text: "text-status-blocked" },
+  { key: "conflicted", label: "Conflicted", border: "border-l-status-conflicted", text: "text-status-conflicted" },
+  { key: "unknown", label: "Unknown", border: "border-l-status-unknown", text: "text-status-unknown" },
 ];
 
 export function Dashboard({ projectId }: { projectId: string }) {
@@ -18,33 +18,35 @@ export function Dashboard({ projectId }: { projectId: string }) {
       .catch((err) => setError(String(err)));
   }, [projectId]);
 
-  if (error) return <div className="p-4 text-red-600">{error}</div>;
-  if (!data) return <div className="p-4 text-gray-500">Loading…</div>;
+  if (error) return <div className="p-6 text-status-conflicted">{error}</div>;
+  if (!data) return <div className="p-6 text-muted">Loading…</div>;
+
+  const nothingToFlag = data.risks.length === 0 && data.conflicts.length === 0 && data.crossed_deadlines.length === 0;
 
   return (
-    <div className="space-y-6 overflow-auto p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {STAT_CARDS.map(({ key, label, color }) => (
-          <div key={key} className={`rounded p-4 text-center ${color}`}>
-            <div className="text-2xl font-bold">{data.counts[key]}</div>
-            <div className="text-sm">{label}</div>
+    <div className="h-full space-y-6 overflow-auto bg-surface p-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {STAT_CARDS.map(({ key, label, border, text }) => (
+          <div key={key} className={`card border-l-4 ${border} px-4 py-3`}>
+            <div className={`text-3xl font-semibold tabular-nums ${text}`}>{data.counts[key]}</div>
+            <div className="mt-0.5 text-sm text-muted">{label}</div>
           </div>
         ))}
       </div>
 
-      <section>
-        <h2 className="mb-2 font-semibold">Critical Dependencies</h2>
+      <section className="card p-5">
+        <h2 className="text-base font-semibold tracking-tight text-ink">Critical Dependencies</h2>
         {data.risks.length === 0 ? (
-          <div className="text-sm text-gray-500">No dependency chains currently at risk.</div>
+          <div className="mt-3 text-sm text-muted">No dependency chains currently at risk.</div>
         ) : (
-          <div className="space-y-2">
+          <div className="mt-3 space-y-2.5">
             {data.risks.map((risk) => (
               <div key={risk.source_node.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="rounded bg-amber-100 px-2 py-0.5">{risk.source_node.name}</span>
+                <span className="badge-blocked">{risk.source_node.name}</span>
                 {risk.chain.map((step) => (
                   <span key={step.edge.id} className="flex items-center gap-2">
-                    <span className="text-gray-400">→</span>
-                    <span className="rounded bg-gray-100 px-2 py-0.5">{step.node?.name ?? "unknown"}</span>
+                    <span className="text-muted">→</span>
+                    <span className="badge-unknown">{step.node?.name ?? "unknown"}</span>
                   </span>
                 ))}
               </div>
@@ -53,20 +55,29 @@ export function Dashboard({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-2 font-semibold">Detected Risks</h2>
-        {data.risks.length === 0 && data.conflicts.length === 0 && data.crossed_deadlines.length === 0 ? (
-          <div className="text-sm text-gray-500">Nothing to flag right now.</div>
+      <section className="card p-5">
+        <h2 className="text-base font-semibold tracking-tight text-ink">Detected Risks</h2>
+        {nothingToFlag ? (
+          <div className="mt-3 text-sm text-muted">Nothing to flag right now.</div>
         ) : (
-          <ul className="space-y-1 text-sm">
+          <ul className="mt-3 space-y-2 text-sm text-ink">
             {data.conflicts.map((c) => (
-              <li key={`conflict-${c.node.id}`}>⚠ {c.node.name} state conflict</li>
+              <li key={`conflict-${c.node.id}`} className="flex items-center gap-2">
+                <span className="badge-conflicted">Conflict</span>
+                {c.node.name} has a state conflict
+              </li>
             ))}
             {data.risks.map((r) => (
-              <li key={`risk-${r.source_node.id}`}>⚠ {r.source_node.name} status uncertain, downstream impact possible</li>
+              <li key={`risk-${r.source_node.id}`} className="flex items-center gap-2">
+                <span className="badge-blocked">Risk</span>
+                {r.source_node.name} status uncertain, downstream impact possible
+              </li>
             ))}
             {data.crossed_deadlines.map((d) => (
-              <li key={`deadline-${d.deadline.id}`}>⚠ Deadline {d.date} passed for {d.deadline.name}</li>
+              <li key={`deadline-${d.deadline.id}`} className="flex items-center gap-2">
+                <span className="badge-conflicted">Deadline</span>
+                {d.date} passed for {d.deadline.name}
+              </li>
             ))}
           </ul>
         )}

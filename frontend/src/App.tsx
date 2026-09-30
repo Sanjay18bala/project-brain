@@ -69,13 +69,17 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col">
-      <div className="flex items-center gap-4 border-b p-2">
-        <h1 className="text-lg font-semibold">Project Brain</h1>
+    <div className="flex h-screen w-full flex-col bg-surface">
+      <div className="flex items-center gap-1 border-b border-border bg-panel px-4 py-2 shadow-card">
+        <h1 className="mr-4 text-base font-semibold tracking-tight text-ink">Project Brain</h1>
         {TABS.map(({ id, label }) => (
           <button
             key={id}
-            className={tab === id ? "font-bold underline" : "text-gray-500"}
+            className={
+              tab === id
+                ? "rounded-md bg-accent-subtle px-3 py-1.5 text-sm font-medium text-accent"
+                : "rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:bg-surface hover:text-ink"
+            }
             onClick={() => setTab(id)}
           >
             {label}
@@ -83,7 +87,7 @@ export default function App() {
         ))}
         <div className="ml-auto flex items-center gap-2">
           <select
-            className="border rounded px-2 py-1"
+            className="rounded-lg border border-border bg-panel px-2.5 py-1.5 text-sm text-ink"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
           >
@@ -96,16 +100,16 @@ export default function App() {
               </option>
             ))}
           </select>
-          <button className="border rounded px-2 py-1" onClick={handleNewProject}>
+          <button className="btn-secondary" onClick={handleNewProject}>
             New Project
           </button>
-          <button className="border rounded px-2 py-1" onClick={handleConnectGithub} disabled={!projectId}>
+          <button className="btn-secondary" onClick={handleConnectGithub} disabled={!projectId}>
             Connect GitHub
           </button>
-          <button className="border rounded px-2 py-1" onClick={handleConnectSlack} disabled={!projectId}>
+          <button className="btn-secondary" onClick={handleConnectSlack} disabled={!projectId}>
             Connect Slack
           </button>
-          <button className="border rounded px-2 py-1" onClick={handleConnectGoogleChat} disabled={!projectId}>
+          <button className="btn-secondary" onClick={handleConnectGoogleChat} disabled={!projectId}>
             Connect Google Chat
           </button>
         </div>
